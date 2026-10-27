@@ -1,0 +1,31 @@
+# docbase 的 HTTPS 入口（install.sh 生成到 /etc/caddy/Caddyfile）；改了以后 sudo systemctl reload caddy
+# 内网自签证书；根证书在 /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt（安装时复制到 /etc/docbase/）
+
+{
+	local_certs
+	skip_install_trust
+}
+
+{{SITES}} {
+	tls internal
+	encode gzip
+
+	# 上传：单个文件最大 2 GB，留些余量
+	request_body {
+		max_size 3GB
+	}
+
+	reverse_proxy 127.0.0.1:8000 {
+		transport http {
+			read_timeout 1h
+			write_timeout 1h
+		}
+	}
+
+	log {
+		output file /var/log/caddy/docbase-access.log {
+			roll_size 10MiB
+			roll_keep 10
+		}
+	}
+}

@@ -1,0 +1,55 @@
+[project]
+name = "docbase"
+version = "0.1.0"
+description = "总包项目文件管理平台（后端）"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy>=2",
+    "psycopg[binary]",
+    "alembic",
+    "pydantic-settings",
+    "python-multipart",
+    "openpyxl",
+    "reportlab",  # MDL 导出 PDF
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "httpx2",  # TestClient 依赖；新版 Starlette 已不推荐 httpx
+    "ruff",  # 代码检查（第 8C 步）
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+extend-exclude = ["alembic/versions", "tests/fixtures/private"]
+
+[tool.ruff.lint]
+# E/W 风格、F 错误（未用导入、未定义名字）、I 导入顺序、B 常见坑、UP 新写法
+select = ["E", "W", "F", "I", "B", "UP"]
+ignore = [
+    "E731",  # 允许把 lambda 赋给变量（排序键）
+    "B008",  # FastAPI 的 Depends / Query 写在默认值里是标准用法
+    "E501",  # 行长度不强制：接口说明里的中文长句拆开反而难读
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试里 import 别的测试文件的 fixture，参数同名是 pytest 的标准用法
+"tests/*" = ["F811"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]

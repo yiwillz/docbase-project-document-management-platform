@@ -1,0 +1,10 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+# Linux 上用的文件必须是 LF 换行（CRLF 的脚本在 Linux 上跑不了）
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.service text eol=lf
+deploy/linux/** text eol=lf
+# Windows PowerShell 脚本
+*.ps1 text eol=crlf

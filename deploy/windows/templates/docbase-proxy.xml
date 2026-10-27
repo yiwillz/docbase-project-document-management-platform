@@ -1,0 +1,21 @@
+<!-- WinSW 服务配置：HTTPS 代理（Caddy）。证书等数据放在安装目录 proxy\data 里 -->
+<service>
+  <id>docbase-proxy</id>
+  <name>docbase HTTPS 代理</name>
+  <description>docbase 项目文件管理平台：HTTPS 入口（Caddy），转给本机的 docbase 后端</description>
+  <executable>{{PROXY_DIR}}\caddy.exe</executable>
+  <arguments>run --config "{{PROXY_DIR}}\Caddyfile" --adapter caddyfile</arguments>
+  <workingdirectory>{{PROXY_DIR}}</workingdirectory>
+  <env name="XDG_DATA_HOME" value="{{PROXY_DIR}}\data"/>
+  <env name="XDG_CONFIG_HOME" value="{{PROXY_DIR}}\config"/>
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>15 sec</stoptimeout>
+  <logpath>{{LOG_DIR}}\service</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+</service>

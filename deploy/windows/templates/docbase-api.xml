@@ -1,0 +1,24 @@
+<!-- WinSW 服务配置：docbase 后端（安装脚本按本机路径填好占位符）。只在本机 8000 端口监听，外面通过 HTTPS 代理访问 -->
+<service>
+  <id>docbase-api</id>
+  <name>docbase 后端</name>
+  <description>docbase 项目文件管理平台：后端接口和页面（只在本机监听，经 docbase-proxy 对外提供 HTTPS）</description>
+  <executable>{{PYTHON}}</executable>
+  <arguments>-m uvicorn app.main:app --host 127.0.0.1 --port {{API_PORT}} --proxy-headers --forwarded-allow-ips 127.0.0.1 --no-access-log</arguments>
+  <workingdirectory>{{BACKEND_DIR}}</workingdirectory>
+  <env name="DOCBASE_ENV_FILE" value="{{ENV_FILE}}"/>
+  <env name="PYTHONIOENCODING" value="utf-8"/>
+  <env name="PYTHONUTF8" value="1"/>
+  <startmode>Automatic</startmode>
+  {{DEPEND}}
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="restart" delay="60 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>20 sec</stoptimeout>
+  <logpath>{{LOG_DIR}}\service</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+</service>

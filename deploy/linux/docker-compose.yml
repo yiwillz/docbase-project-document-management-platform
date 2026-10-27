@@ -1,0 +1,90 @@
+# docbase 的 docker 部署：数据库、后端、后台任务、HTTPS 代理。
+# 一般用 docker-install.sh 安装（它会生成同目录下的 .env）；手动用法见 docs/install-linux.md。
+#   docker compose up -d             启动
+#   docker compose ps                看状态
+#   docker compose logs -f api       看日志
+
+name: docbase
+
+x-docbase: &docbase
+  image: docbase:${DOCBASE_VERSION:-latest}
+  restart: unless-stopped
+  environment:
+    DOCBASE_DATABASE_URL: postgresql+psycopg://docbase:${DB_PASSWORD:?在 .env 里设 DB_PASSWORD}@db:5432/docbase
+    # 共享盘镜像要用的话见 docs/install-linux.md（容器里跨挂载点做不了硬链接，一律复制）
+    DOCBASE_MIRROR_MODE: copy
+    DOCBASE_BACKUP_HOUR: ${BACKUP_HOUR:-1}
+    DOCBASE_BACKUP_DAYS: ${BACKUP_DAYS:-30}
+    TZ: ${TZ:-UTC}
+  env_file:
+    # 其他配置（存量导入目录、保留版本数等）写在这里；可以没有
+    - path: docbase.env
+      required: false
+  volumes:
+    - ${DATA_DIR:?在 .env 里设 DATA_DIR}:/var/lib/docbase/data
+    - ${BACKUP_DIR:?在 .env 里设 BACKUP_DIR}:/var/backups/docbase
+    - ${LOG_DIR:?在 .env 里设 LOG_DIR}:/var/log/docbase
+  depends_on:
+    db:
+      condition: service_healthy
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "5"}
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: docbase
+      POSTGRES_USER: docbase
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?在 .env 里设 DB_PASSWORD}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docbase -d docbase"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+
+  api:
+    <<: *docbase
+    build:
+      context: ../..
+      dockerfile: deploy/linux/Dockerfile
+      args:
+        VERSION: ${DOCBASE_VERSION:-latest}
+
+  worker:
+    <<: *docbase
+    command: ["python", "scripts/worker.py"]
+    # worker 不提供网页，不用镜像里的健康检查
+    healthcheck:
+      disable: true
+
+  proxy:
+    image: caddy:2.10.2
+    restart: unless-stopped
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTP_PORT:-80}:80"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?在 .env 里设 SITE_ADDRESS，如 https://192.168.1.50}
+    volumes:
+      - ./Caddyfile.docker:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

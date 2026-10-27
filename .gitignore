@@ -1,0 +1,46 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/
+data_test/
+node_modules/
+frontend/dist/
+.pytest_cache/
+.vscode/*
+!.vscode/extensions.json
+backend/tests/fixtures/private/
+*.egg-info/
+build/
+dist/
+.coverage
+htmlcov/
+*.log
+
+# 前端本机配置（如 VITE_API_TARGET）
+frontend/.env.local
+
+# 页面测试的输出
+frontend/test-results/
+frontend/playwright-report/
+
+# 备份试用目录、发布包
+backend/backup_test/
+release/
+deploy/windows/bin/
+VERSION
+
+# Linux docker 安装时在 deploy/linux 下生成的（.env、VERSION 上面已经忽略）
+deploy/linux/docbase-root.crt
+deploy/linux/docbase-image.tar
+deploy/linux/docbase.env
+
+# 本机 AI 编程助手的说明，不进仓库
+CLAUDE.md
+.claude/
+
+# 开发过程记录，只留本地
+docs/step/
+docs/steps.md
+docs/market.md
+docs/decisions.md

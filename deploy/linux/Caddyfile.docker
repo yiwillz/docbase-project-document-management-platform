@@ -1,0 +1,25 @@
+# docbase 的 HTTPS 入口（docker 里的 Caddy）。访问地址来自 .env 的 SITE_ADDRESS（多个用逗号分隔）
+# 内网自签证书；根证书导出：docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./docbase-root.crt
+
+{
+	local_certs
+	skip_install_trust
+	admin off
+}
+
+{$SITE_ADDRESS} {
+	tls internal
+	encode gzip
+
+	# 上传：单个文件最大 2 GB，留些余量
+	request_body {
+		max_size 3GB
+	}
+
+	reverse_proxy api:8000 {
+		transport http {
+			read_timeout 1h
+			write_timeout 1h
+		}
+	}
+}

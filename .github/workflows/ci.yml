@@ -1,0 +1,188 @@
+# 远程 CI（第 8C 步）：推到 GitHub 后自动跑代码检查、名称扫描、全部测试。
+# 禁用名称清单放在仓库 Settings → Secrets 的 DOCBASE_FORBIDDEN_NAMES（逗号分隔），不写进仓库。
+# 第 17B 步加了 Linux 部署验证：docker 方式、systemd 方式各真装一遍并冒烟测试、备份恢复。
+# 在 Actions 页面手动运行（Run workflow）时，另外打 Linux 离线安装包（含 docker 镜像），在运行结果里下载。
+name: checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: docbase_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DOCBASE_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/docbase
+      DOCBASE_TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/docbase_test
+      DOCBASE_FORBIDDEN_NAMES: ${{ secrets.DOCBASE_FORBIDDEN_NAMES }}
+      # runner 自带的 pg_dump 是 16，不能备份 17 的库；用上一步装的 17
+      DOCBASE_PG_BIN: /usr/lib/postgresql/17/bin
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: PostgreSQL 17 client
+        run: |
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-17
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Checks and tests
+        run: python scripts/check.py --skip-frontend
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run type-check
+      - run: npm test
+      - run: npm run build
+
+  # ------------------------------------------------------------ Linux：docker 方式
+  linux-docker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      ADMIN_PW: ci-admin-pass-1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint shell scripts
+        run: shellcheck -x -S warning deploy/linux/*.sh
+      - name: Build image
+        run: docker build -f deploy/linux/Dockerfile -t docbase:ci --build-arg VERSION=ci .
+      - name: Install with docker-install.sh
+        working-directory: deploy/linux
+        run: |
+          echo ci > VERSION
+          sudo ./docker-install.sh --data-dir "$RUNNER_TEMP/dk/data" --backup-dir "$RUNNER_TEMP/dk/backup"             --log-dir "$RUNNER_TEMP/dk/logs" --address localhost --tz UTC --admin-user admin --admin-password "$ADMIN_PW"
+      - name: Smoke test
+        working-directory: deploy/linux
+        run: ./smoke-test.sh https://localhost admin "$ADMIN_PW"
+      - name: Backup and restore drill
+        working-directory: deploy/linux
+        run: |
+          sudo docker compose exec -T worker python scripts/backup.py
+          sudo docker compose exec -T worker python scripts/restore.py --to docbase_drill --data-dir /var/backups/docbase/restore-drill | tee restore.txt
+          grep -q 全部一致 restore.txt
+      - name: Survives restart
+        working-directory: deploy/linux
+        run: |
+          sudo docker compose restart api worker
+          sleep 5
+          ./smoke-test.sh https://localhost admin "$ADMIN_PW"
+      - name: Upgrade (same version) keeps data
+        working-directory: deploy/linux
+        run: |
+          sudo ./docker-upgrade.sh --from . --skip-backup
+          ./smoke-test.sh https://localhost admin "$ADMIN_PW"
+      - name: Logs on failure
+        if: failure()
+        working-directory: deploy/linux
+        run: sudo docker compose logs --tail 200
+
+  # ------------------------------------------------------------ Linux：systemd 方式（Ubuntu 24.04）
+  linux-systemd:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      ADMIN_PW: ci-admin-pass-1
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build frontend
+        working-directory: frontend
+        run: npm ci && npm run build
+      - name: Build Linux package
+        run: python3 backend/scripts/release.py --target linux --skip-build --version ci
+      - name: Install with install.sh
+        run: |
+          mkdir -p "$RUNNER_TEMP/pkg" && tar -xzf release/docbase-ci-linux.tar.gz -C "$RUNNER_TEMP/pkg"
+          cd "$RUNNER_TEMP/pkg/docbase-ci-linux"
+          sudo ./install.sh --data-dir /srv/docbase/data --backup-dir /srv/docbase/backup --address localhost             --admin-user admin --admin-password "$ADMIN_PW"
+      - name: Smoke test
+        run: $RUNNER_TEMP/pkg/docbase-ci-linux/smoke-test.sh https://localhost admin "$ADMIN_PW"
+      - name: Backup and restore drill
+        run: |
+          cd /opt/docbase/app/backend
+          sudo -u docbase env DOCBASE_ENV_FILE=/etc/docbase/docbase.env /opt/docbase/venv/bin/python scripts/backup.py
+          sudo -u postgres psql -qc "ALTER ROLE docbase CREATEDB"
+          sudo -u docbase env DOCBASE_ENV_FILE=/etc/docbase/docbase.env /opt/docbase/venv/bin/python scripts/restore.py             --to docbase_drill --data-dir /srv/docbase/backup/restore-drill | tee "$RUNNER_TEMP/restore.txt"
+          grep -q 全部一致 "$RUNNER_TEMP/restore.txt"
+      - name: Restarts after a crash
+        run: |
+          sudo systemctl kill -s KILL docbase-api
+          sleep 15
+          systemctl is-active docbase-api
+          $RUNNER_TEMP/pkg/docbase-ci-linux/smoke-test.sh https://localhost admin "$ADMIN_PW"
+      - name: Upgrade (same version) keeps data
+        run: |
+          cd "$RUNNER_TEMP/pkg/docbase-ci-linux"
+          sudo ./upgrade.sh
+          ./smoke-test.sh https://localhost admin "$ADMIN_PW"
+      - name: Uninstall keeps data
+        run: |
+          cd "$RUNNER_TEMP/pkg/docbase-ci-linux"
+          sudo ./uninstall.sh
+          test -d /srv/docbase/data && test -f /etc/docbase/docbase.env
+      - name: Logs on failure
+        if: failure()
+        run: |
+          sudo journalctl -u docbase-api -u docbase-worker -u caddy -n 200 --no-pager
+          sudo cat /var/log/docbase/*.log | tail -100
+
+  # ------------------------------------------------------------ 手动运行时：打 Linux 离线安装包（含 docker 镜像）
+  linux-package:
+    if: github.event_name == 'workflow_dispatch'
+    needs: [linux-docker, linux-systemd]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build frontend
+        working-directory: frontend
+        run: npm ci && npm run build
+      - name: Build image and package
+        run: |
+          V="$(python3 -c "import tomllib; print(tomllib.load(open('backend/pyproject.toml','rb'))['project']['version'])")-$(date +%Y%m%d)-$(git rev-parse --short HEAD)"
+          echo "V=$V" >> "$GITHUB_ENV"
+          docker build -f deploy/linux/Dockerfile -t "docbase:$V" --build-arg VERSION="$V" .
+          docker save "docbase:$V" -o docbase-image.tar
+          python3 backend/scripts/release.py --target linux --skip-build --version "$V" --docker-image docbase-image.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docbase-${{ env.V }}-linux
+          path: release/docbase-${{ env.V }}-linux.tar.gz
+          retention-days: 30

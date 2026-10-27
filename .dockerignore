@@ -1,0 +1,21 @@
+# 构建 docker 镜像时不需要的东西（也防止私有数据和配置进镜像）
+**/.venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.env
+**/.env.*
+!backend/.env.example
+backend/data
+backend/data_test
+backend/backup_test
+backend/tests
+frontend/dist
+frontend/test-results
+frontend/playwright-report
+release
+deploy/windows/bin
+.git
+.github
+.vscode
+*.log

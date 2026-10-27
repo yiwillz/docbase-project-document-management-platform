@@ -1,0 +1,24 @@
+<!-- WinSW 服务配置：docbase 后台 worker（存量导入、交付包、镜像、每天的备份和例行清理） -->
+<service>
+  <id>docbase-worker</id>
+  <name>docbase 后台任务</name>
+  <description>docbase 项目文件管理平台：后台任务（存量导入、交付包、共享盘镜像、每天的备份和清理、存储检查）</description>
+  <executable>{{PYTHON}}</executable>
+  <arguments>scripts\worker.py</arguments>
+  <workingdirectory>{{BACKEND_DIR}}</workingdirectory>
+  <env name="DOCBASE_ENV_FILE" value="{{ENV_FILE}}"/>
+  <env name="PYTHONIOENCODING" value="utf-8"/>
+  <env name="PYTHONUTF8" value="1"/>
+  <startmode>Automatic</startmode>
+  {{DEPEND}}
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="restart" delay="60 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>30 sec</stoptimeout>
+  <logpath>{{LOG_DIR}}\service</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+</service>

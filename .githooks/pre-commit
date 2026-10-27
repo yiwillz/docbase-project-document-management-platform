@@ -1,0 +1,14 @@
+#!/bin/sh
+# 提交前检查（第 8C 步）：真实名称扫描（只扫这次要提交的文件）+ 代码检查（ruff）。
+# 启用：在项目根目录执行一次  git config core.hooksPath .githooks
+# 全部测试较慢，不在这里跑；每步结束时运行 backend/scripts/check.py。
+cd "$(git rev-parse --show-toplevel)/backend" || exit 1
+if [ -x .venv/Scripts/python.exe ]; then PY=.venv/Scripts/python.exe
+elif [ -x .venv/bin/python ]; then PY=.venv/bin/python
+else PY=python; fi
+"$PY" scripts/check_names.py --staged || { echo "提交被拦下：名称扫描不通过"; exit 1; }
+"$PY" -m ruff check . --quiet || { echo "提交被拦下：代码检查（ruff）不通过，可试 python -m ruff check . --fix"; exit 1; }
+# 改了前端文件时，再跑前端代码检查（ESLint + 界面文字不能直接写中文）
+if git diff --cached --name-only | grep -q '^frontend/'; then
+  cd ../frontend && npm run lint --silent || { echo "提交被拦下：前端代码检查不通过"; exit 1; }
+fi

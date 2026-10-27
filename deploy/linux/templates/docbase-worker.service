@@ -1,0 +1,23 @@
+# docbase 后台任务（install.sh 生成到 /etc/systemd/system/）：存量导入、交付包、镜像、每天的备份和清理、存储检查
+[Unit]
+Description=docbase 后台任务
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=docbase
+Group=docbase
+WorkingDirectory={{BACKEND_DIR}}
+Environment=DOCBASE_ENV_FILE={{ENV_FILE}}
+Environment=PYTHONIOENCODING=utf-8
+ExecStart={{PYTHON}} scripts/worker.py
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

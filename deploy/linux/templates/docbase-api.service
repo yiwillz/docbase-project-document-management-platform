@@ -1,0 +1,24 @@
+# docbase 后端（install.sh 生成到 /etc/systemd/system/）。只在本机 8000 端口监听，外面经 Caddy / Nginx 访问
+[Unit]
+Description=docbase 后端（接口和页面）
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=docbase
+Group=docbase
+WorkingDirectory={{BACKEND_DIR}}
+Environment=DOCBASE_ENV_FILE={{ENV_FILE}}
+Environment=PYTHONIOENCODING=utf-8
+ExecStart={{PYTHON}} -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1 --no-access-log
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=20
+# 只能写数据、备份、日志目录
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

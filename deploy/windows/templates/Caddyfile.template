@@ -1,0 +1,36 @@
+# docbase 的 HTTPS 入口（Caddy）。安装脚本按本机地址生成；改了以后重启服务：Restart-Service docbase-proxy
+# 说明见 docs/install-windows.md 的"证书"一节
+
+{
+	# 内网用：自己签发证书，不连外网申请；根证书在 proxy\data\caddy\pki\authorities\local\root.crt
+	local_certs
+	skip_install_trust
+	# 关掉管理接口（改配置后重启服务即可）
+	admin off
+}
+
+# 访问地址（IP 或名字，多个用逗号分隔）；http 会自动跳转到 https
+{{SITES}} {
+	tls internal
+	encode gzip
+
+	# 上传：单个文件最大 2 GB（分块上传时每块更小），留些余量
+	request_body {
+		max_size 3GB
+	}
+
+	reverse_proxy 127.0.0.1:{{API_PORT}} {
+		# 大文件下载、生成报表可能较慢
+		transport http {
+			read_timeout 1h
+			write_timeout 1h
+		}
+	}
+
+	log {
+		output file "{{LOG_DIR}}\proxy-access.log" {
+			roll_size 10MiB
+			roll_keep 10
+		}
+	}
+}

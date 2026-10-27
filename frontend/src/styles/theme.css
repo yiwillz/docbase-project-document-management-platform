@@ -1,0 +1,20 @@
+/* 主色：和导出文件（MDL、传送单表头）一致的深蓝 #1F3864 */
+:root {
+  --brand-navy: #1f3864;
+  --el-color-primary: #1f3864;
+  --el-color-primary-light-3: #627491;
+  --el-color-primary-light-5: #8f9cb2;
+  --el-color-primary-light-7: #bcc3d1;
+  --el-color-primary-light-8: #d2d7e0;
+  --el-color-primary-light-9: #e9ebf0;
+  --el-color-primary-dark-2: #192d50;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  font-family: 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--el-text-color-primary);
+}
