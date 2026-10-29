@@ -44,7 +44,7 @@ It suits equipment manufacturers, automation and production-line integrators, an
 - **Deliverables generated automatically.** One per linked equipment item, per module, or per milestone, depending on the document type.
 - **Upload without forms.** Drop a batch of files: the platform recognises the deliverable from the file and folder names and the equipment list, and you confirm.
 - **Automatic naming and versioning.**
-  - Naming follows a per-project template, e.g. `3.5.72_Cut sheet-Mixer A-20260226-V1.pdf`.
+  - Naming follows a per-project template.
   - Re-uploading a file with the same title and format creates the next version.
   - Older versions go to a 90-day recycle area.
 - **Deliverable matrix.** Completion, received, outstanding and overdue at a glance. Filters can be shared as a link.
@@ -159,7 +159,7 @@ The suite has about 400 backend tests, frontend unit tests and Playwright end-to
 
 - [x] **v1: Document base.** Structure, deliverables, naming, versions, MDL, transmittals, delivery, legacy import, deployment.
 - [ ] **v2: AI.** Knowledge-base Q&A over project documents, AI pre-review of submittals.
-- [ ] **v3: Workflow.** Internal approval flows, push to Procore / Jira.
+- [ ] **v3: Workflow.** Internal approval flows, push to other project management platform like jira.
 
 ## License
 
