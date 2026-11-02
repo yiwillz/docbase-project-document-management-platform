@@ -1,4 +1,4 @@
-# install.ps1、upgrade.ps1、uninstall.ps1 共用的函数（Windows PowerShell 5.1 可用）
+﻿# install.ps1、upgrade.ps1、uninstall.ps1 共用的函数（Windows PowerShell 5.1 可用）
 # 本文件要存成带 BOM 的 UTF-8，否则中文 Windows 上的 PowerShell 5.1 会读成乱码
 
 $ErrorActionPreference = 'Stop'
@@ -33,6 +33,42 @@ function Show-Failure($Err) {
 function Test-Admin {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     return (New-Object Security.Principal.WindowsPrincipal $id).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function ConvertFrom-ProtectedString([Security.SecureString]$Value) {
+    $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
+    try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
+}
+
+function Test-PathWithin([string]$Candidate, [string]$Parent) {
+    $childPath = [IO.Path]::GetFullPath($Candidate).TrimEnd('\', '/')
+    $parentPath = [IO.Path]::GetFullPath($Parent).TrimEnd('\', '/')
+    return $childPath.Equals($parentPath, [StringComparison]::OrdinalIgnoreCase) -or
+        $childPath.StartsWith($parentPath + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Invoke-NativeCapture([string]$Executable, [string[]]$Arguments) {
+    # PowerShell 5.1 会把 native stderr 转成 ErrorRecord；以退出码判断成败。
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = & $Executable @Arguments 2>&1
+        $code = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previousPreference }
+    return @{ Code=$code; Output=($output | Out-String).Trim() }
+}
+
+function Assert-InstallPackage([string]$PackageDir) {
+    $required = @('VERSION', 'app\backend\app\main.py', 'app\frontend\dist\index.html',
+        'wheelhouse', 'requirements.txt', 'bin\WinSW-x64.exe', 'bin\caddy.exe',
+        'templates\docbase.env.template', 'templates\docbase-api.xml',
+        'templates\docbase-worker.xml', 'templates\docbase-proxy.xml', 'templates\Caddyfile.template')
+    $missing = @($required | Where-Object { -not (Test-Path -LiteralPath (Join-Path $PackageDir $_)) })
+    if ($missing.Count -gt 0) {
+        Stop-WithError ('当前目录不是完整的 Windows 安装包。请从 release 下解压后的安装包根目录运行；' +
+            '源码 deploy\windows 不能直接安装。缺少：' + ($missing -join ', '))
+    }
 }
 
 # 写 UTF-8（不带 BOM）：.env、Caddyfile、xml 都这样写
@@ -145,15 +181,16 @@ function Register-DocbaseService([string]$PackageDir, [string]$InstallDir, [stri
     Expand-Template (Join-Path $PackageDir "templates\$Id.xml") (Join-Path $svcDir "$Id.xml") $Values
     if (Get-Service $Id -ErrorAction SilentlyContinue) {
         # WinSW 2.x 不能就地改配置：停掉、删掉、等 Windows 真正删完，再按新配置注册
-        & $exe stopwait 2>&1 | Out-Null
-        & $exe uninstall 2>&1 | Out-Null
+        $null = Invoke-NativeCapture $exe @('stopwait')
+        $removed = Invoke-NativeCapture $exe @('uninstall')
+        if ($removed.Code -ne 0) { Stop-WithError "卸载旧服务 $Id 失败：$($removed.Output)" }
         for ($i = 0; $i -lt 30 -and (Get-Service $Id -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Seconds 1 }
         if (Get-Service $Id -ErrorAction SilentlyContinue) {
             Stop-WithError "服务 $Id 删不掉（可能服务管理窗口还开着）：关掉 services.msc 后重新运行"
         }
     }
-    & $exe install 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { Stop-WithError "注册服务 $Id 失败" }
+    $registered = Invoke-NativeCapture $exe @('install')
+    if ($registered.Code -ne 0) { Stop-WithError "注册服务 $Id 失败：$($registered.Output)" }
 }
 
 function Stop-DocbaseServices {

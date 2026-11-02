@@ -37,8 +37,9 @@ ok "版本改为 $VERSION（回退：把 .env 里的 DOCBASE_VERSION 改回 $OLD
 
 step "3/4 重新创建容器"
 cd "$FROM"
-docker compose up -d
-wait_until 180 "docker compose exec -T api python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)\"" \
+docker compose config --quiet
+docker compose up -d --no-build --pull never
+wait_until 180 "docker compose exec -T api python scripts/healthcheck.py" \
   || { docker compose logs --tail 50 api; die "新版本后端没有正常启动（上面是日志）"; }
 
 step "4/4 检查"

@@ -2,14 +2,20 @@
 
 面向：负责安装和维护 docbase 的 IT 人员。Windows 的安装见 `install-windows.md`。
 
+本手册是安装操作说明，不是当前版本已在 Linux 验收通过的证明。CI 已定义 Compose/systemd 安装任务，需要核对拟交付提交的实际结果。业务操作见 [用户指南](user-guide.md)，已实现能力及可靠性缺口见 [架构与验收状态](architecture.md)。NAS/外接盘还需验证挂载消失后不会向系统盘写入；健康探测可写不等于挂载身份正确。
+
 Linux 上有两种装法，用同一套程序，数据和备份格式也一样（可以互相迁移）：
 
 | 方式 | 适用 | 需要 |
 |---|---|---|
-| **docker**（推荐） | 任何 64 位 Linux（Ubuntu、Debian、CentOS / Rocky、麒麟、统信等） | Docker Engine 24+ 和 compose 插件 |
+| **docker**（Linux 服务器推荐） | 与镜像 CPU 架构一致的 Linux；现有离线包按 x86_64 准备 | Docker Engine 24+ 和 Compose 2.24.0+ 插件 |
 | **systemd**（不用 docker） | Ubuntu 24.04 LTS | 能连 apt 源（或公司内网镜像）装 Python 3.12、PostgreSQL、Caddy |
 
 安装包：`docbase-版本-linux.tar.gz`（离线：Python 依赖在包里；带 `docbase-image.tar` 的是 docker 离线版）。
+
+Surface Pro 7 的当前试点优先按 `install-windows.md` 使用 Windows 原生服务，见 PRD 第 5、8–9 节。本手册面向已有 Linux 服务器的场景。部署入口区别见 `../deploy/README.zh-CN.md`（源码仓库内）。
+
+完全离线的镜像 tar 必须同时包含 `docbase:版本`、`postgres:17`、`caddy:2.10.2`；Docker Engine 和 Compose 需要事先安装。旧发布包不会随源码修复自动更新，应重新构建。
 
 ## 1. 组成和端口
 
@@ -66,7 +72,7 @@ services:
 
 ### 3.3 备份、恢复、日志
 
-worker 每天 1 点（`.env` 里的 `BACKUP_HOUR`）自动备份到备份目录，保留 30 天。手动：
+worker 每天 1 点（`.env` 里的 `BACKUP_HOUR`）自动备份到备份目录，保留 30 天。备份清单的 `missing` 必须为空；恢复输出“全部一致”仅指表数量，仍需核对实体 SHA-256 并抽查文件。日志仅对配置做部分脱敏，原始日志发出前需检查。手动：
 
 ```bash
 sudo docker compose exec worker python scripts/backup.py            # 马上备份
@@ -78,7 +84,7 @@ sudo docker compose exec worker python scripts/collect_logs.py --out /var/log/do
 ```
 
 真正出事要覆盖正在用的库：`sudo docker compose stop api worker proxy`，再
-`sudo docker compose run --rm worker python scripts/restore.py --stamp 日期 --to docbase --data-dir /var/lib/docbase/data --force`，最后 `sudo docker compose up -d`。
+`sudo docker compose run --rm --no-deps worker python scripts/restore.py --stamp 日期 --to docbase --data-dir /var/lib/docbase/data --force`，最后 `sudo docker compose up -d`。恢复时保留 db 运行，`--no-deps` 防止重新启动已经停止的 api 和 worker 依赖。
 
 ### 3.4 升级
 
@@ -87,11 +93,20 @@ tar -xzf docbase-新版本-linux.tar.gz && cd docbase-新版本-linux
 sudo ./docker-upgrade.sh --from /opt/docbase-docker
 ```
 
-先备份 → 载入新镜像 → 把新的 compose 文件复制过去、改 `.env` 里的版本 → 重新创建容器（后端启动时自动升级数据库结构）→ 检查。回退：把 `.env` 里的 `DOCBASE_VERSION` 改回旧版本再 `docker compose up -d`；数据库结构已经升级的话用备份恢复。
+先备份 → 载入新镜像 → 把新的 compose 文件复制过去、改 `.env` 里的版本 → 重新创建容器（后端启动时自动升级数据库结构）→ 检查。先备份自定义 compose/代理配置，升级脚本会覆盖标准文件。回退时在原安装目录将 `DOCBASE_VERSION` 改回旧版本，并确认旧镜像存在；数据库结构变化后还要按停服恢复流程恢复数据库。
 
 ### 3.5 没有离线镜像时
 
-在能上网的机器上从源码构建：在源码根目录 `docker build -f deploy/linux/Dockerfile -t docbase:版本 --build-arg VERSION=版本 .`，再 `docker save docbase:版本 -o docbase-image.tar` 拷过去。
+在能上网、CPU 架构与目标服务器一致的机器上，从源码根目录运行（将下方 `版本` 替换为与安装包 VERSION 一致的版本）：
+
+```bash
+docker build -f deploy/linux/Dockerfile -t docbase:版本 --build-arg VERSION=版本 .
+docker pull postgres:17
+docker pull caddy:2.10.2
+docker save docbase:版本 postgres:17 caddy:2.10.2 -o docbase-image.tar
+```
+
+把 tar 放进已解压的 Linux 安装包根目录，再执行安装脚本。发布包不具备源码构建的目录结构，应使用已加载镜像；安装和升级现在使用 `--no-build --pull never` 启动。
 
 ## 4. systemd 方式（Ubuntu 24.04）
 
@@ -121,12 +136,16 @@ journalctl -u docbase-api -f                          # 实时日志
 运维脚本以 docbase 用户运行（下面用 `dbpy` 代替这一串）：
 
 ```bash
-alias dbpy='cd /opt/docbase/app/backend && sudo -u docbase env DOCBASE_ENV_FILE=/etc/docbase/docbase.env /opt/docbase/venv/bin/python'
+dbpy() {
+  (cd /opt/docbase/app/backend && sudo -u docbase env DOCBASE_ENV_FILE=/etc/docbase/docbase.env /opt/docbase/venv/bin/python "$@")
+}
 dbpy scripts/backup.py              # 马上备份（每天 1 点也会自动备份）
 dbpy scripts/backup.py --list
 dbpy scripts/restore.py --to docbase_drill --data-dir /srv/docbase/backup/restore-drill   # 恢复演练
 dbpy scripts/collect_logs.py --out /tmp                                                  # 打包日志
 ```
+
+新版脚本自动创建的数据库角色具有 `CREATEDB`，可建立演练库。已有配置被沿用时不会自动补权限；旧安装或外部数据库应由 DBA 确认权限或预建恢复库。PostgreSQL 客户端工具也需与服务器版本兼容。
 
 ### 4.3 升级、卸载
 
@@ -142,13 +161,15 @@ sudo ./uninstall.sh                               # 只删服务；--remove-prog
 默认用 Caddy 的内网自签证书（同 Windows，见 `install-windows.md` 第 5 节）：把根证书（docker：安装目录的 `docbase-root.crt`；systemd：`/etc/docbase/docbase-root.crt`）装到每台访问的电脑上。
 
 用公司 CA 签发的证书：
-- docker：把证书和私钥放到安装目录 `certs/`，在 `docker-compose.override.yml` 里给 proxy 挂上 `./certs:/certs:ro`，把 `Caddyfile.docker` 里的 `tls internal` 改成 `tls /certs/docbase.crt /certs/docbase.key`，`docker compose up -d`。
+- docker：把证书和私钥放到安装目录 `certs/`，在 `docker-compose.override.yml` 里给 proxy 挂上 `./certs:/certs:ro`，把 `Caddyfile.docker` 里的 `tls internal` 改成 `tls /certs/docbase.crt /certs/docbase.key`。执行 `sudo docker compose up -d --no-build --pull never` 应用挂载，再执行 `sudo docker compose exec proxy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile` 加载证书配置。
 - systemd：改 `/etc/caddy/Caddyfile` 的 `tls internal` 为证书路径（caddy 用户要能读），`sudo systemctl reload caddy`。
 - 或者用 Nginx：配置示例在安装包的 `nginx/docbase.conf`（安装时加 `--proxy nginx`）。
 
 ## 6. 文件存储断开
 
-文件目录在 NAS 等网络盘上断开时：页面顶部出现红条、上传和导入被拒绝；日志里记一条 ERROR；`/api/health` 返回 `"storage": false`。接回去后一分钟内自动恢复。docker 方式下，挂载点断开后要 `docker compose restart api worker` 才能重新看到。
+目录无法读取或写入时，页面提示存储不可用、写入被拒绝，日志记录错误，健康接口可能返回 `"storage": false`。恢复可用后状态随探测更新，不保证固定一分钟。若挂载消失但挂载点仍可写，当前检查可能误判正常，必须由 IT 核对实际挂载。
+
+Docker 对宿主机挂载变化的可见性取决于挂载方式；不要只执行重启就认定恢复。先确认宿主机和容器内均能读取正确文件，必要时停写后重建 api/worker 容器，再验证存储与数据库一致。
 
 ## 7. 常见问题
 

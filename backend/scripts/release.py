@@ -43,8 +43,8 @@ CADDY = ("https://github.com/caddyserver/caddy/releases/download/v2.10.2/caddy_2
 HASHES_FILE = DEPLOY / "bin-hashes.txt"
 
 BACKEND_FILES = ["app", "alembic", "alembic.ini", "scripts", "pyproject.toml"]
-DOCS = {"windows": ["install-windows.md", "migrate-machine.md"],
-        "linux": ["install-linux.md", "migrate-machine.md"]}
+DOCS = ["install-windows.md", "install-linux.md", "migrate-machine.md", "user-guide.md",
+        "architecture.md", "PRD.md", "database.md", "database-erd.md"]
 # 下载哪个平台的依赖（都是 Python 3.12）
 PLATFORMS = {"windows": ["win_amd64"],
              "linux": ["manylinux_2_28_x86_64", "manylinux_2_17_x86_64", "manylinux2014_x86_64", "linux_x86_64"]}
@@ -151,7 +151,11 @@ def copy_app(stage: Path, dist: Path) -> None:
 def stage_windows(stage: Path) -> None:
     for ps1 in DEPLOY.glob("*.ps1"):
         (stage / ps1.name).write_bytes(ensure_bom(ps1.read_text(encoding="utf-8-sig")))
+    for cmd in DEPLOY.glob("*.cmd"):
+        (stage / cmd.name).write_bytes(lf(cmd).replace(b"\n", b"\r\n"))
     shutil.copytree(DEPLOY / "templates", stage / "templates")
+    (stage / "nginx").mkdir()
+    shutil.copy2(ROOT / "deploy" / "nginx" / "docbase.conf", stage / "nginx" / "docbase.conf")
     (stage / "bin").mkdir()
     for url, exe in (WINSW, CADDY):
         shutil.copy2(fetch_bin(url, exe), stage / "bin" / exe)
@@ -159,9 +163,14 @@ def stage_windows(stage: Path) -> None:
     readme = [
         "docbase 安装包",
         "",
-        "新安装：先装好 Python 3.12 和 PostgreSQL 17，再用管理员 PowerShell 在本目录运行：",
+        "新电脑：先完整解压本安装包，双击 install.cmd，接受管理员权限提示。",
+        "首次需联网，并安装或更新微软 App Installer（winget）。不需要预装 Python、PostgreSQL、Git 或 Node。",
+        "也可以在本目录运行：",
+        r"  powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1",
+        "",
+        "离线安装：先装好 Python 3.12 和 PostgreSQL 17，再用管理员 PowerShell 在本目录运行：",
         "  Set-ExecutionPolicy -Scope Process Bypass",
-        r"  .\install.ps1 -DataDir E:\docbase-data",
+        r"  .\install.ps1 -Offline -DataDir E:\docbase-data",
         "",
         r"升级：管理员 PowerShell 在新版本的本目录运行 .\upgrade.ps1",
         "",
@@ -212,7 +221,7 @@ def build(version: str, skip_build: bool, target: str = "windows", docker_image:
     else:
         stage_linux(stage, docker_image)
     (stage / "docs").mkdir()
-    for doc in DOCS[target]:
+    for doc in DOCS:
         if (ROOT / "docs" / doc).is_file():
             shutil.copy2(ROOT / "docs" / doc, stage / "docs" / doc)
     # 生成的文本文件一律 LF（Windows 上 write_text 默认写 CRLF，Linux 上 VERSION 带 \r 会出错）
@@ -255,13 +264,17 @@ def build(version: str, skip_build: bool, target: str = "windows", docker_image:
 
 
 def main() -> None:
+    global OUT_DIR
     parser = argparse.ArgumentParser(description="打安装包")
     parser.add_argument("--target", choices=["windows", "linux"], default="windows")
     parser.add_argument("--version", default=None)
     parser.add_argument("--skip-build", action="store_true", help="不重新打包前端")
     parser.add_argument("--docker-image", type=Path, help="Linux 包里一起放的离线镜像（docker save 的 tar）")
     parser.add_argument("--lock", action="store_true", help="只更新 requirements.lock")
+    parser.add_argument("--output-dir", type=Path, help="发布包输出目录；Windows 深路径建议 C:/docbase/packages")
     args = parser.parse_args()
+    if args.output_dir:
+        OUT_DIR = args.output_dir.resolve()
     if args.lock:
         write_lock()
         return

@@ -1,18 +1,18 @@
 # 把 docbase 迁移到新机器（Windows）
 
-适用：换电脑、换服务器、旧机器要报废。迁移后数据（数据库 + 文件）完全一样，用户、权限、历史记录都保留。
+适用：换电脑、换服务器、旧机器要报废。目标是保留数据库、文件、用户、权限和历史；必须以恢复后的数量与文件哈希核对为准，不能只凭服务启动认定迁移完成。
 
-准备：新机器按 `install-windows.md` 第 2、3 节准备好（Python 3.12、PostgreSQL、外接盘、固定 IP）；
+准备：新机器按 [Windows 手册](install-windows.md) 使用在线安装入口，或预装环境后离线安装，准备存储、备份与固定 IP；
 **新旧机器用同一个 docbase 版本**（版本不同的话，先在旧机器上升级到同一版本再迁移）。
 
 ## 步骤
 
 ### 1. 在新机器上安装
 
-按 `install-windows.md` 第 4 节正常安装，建一个临时管理员即可（恢复后会被旧数据里的账号替换）。
+使用同版本完整包：联网时双击 `install.cmd` 自动准备环境和临时管理员；离线且 Python/PostgreSQL 已准备好时，以管理员 PowerShell 执行下面命令。恢复后初始账号被旧数据中的账号替换，新的 `setup-credentials.json` 中应用初始密码不能用来登录恢复后的旧账号。
 
 ```powershell
-.\install.ps1 -DataDir E:\docbase-data
+.\install.ps1 -Offline -DataDir E:\docbase-data
 ```
 
 装好后先停掉新机器上的服务：
@@ -26,14 +26,15 @@ Stop-Service docbase-proxy, docbase-worker, docbase-api
 通知大家停止使用，然后在旧机器上：
 
 ```powershell
-Stop-Service docbase-proxy, docbase-api          # 先停对外服务，确保没人再改
+Stop-Service docbase-proxy, docbase-api, docbase-worker  # 停止请求与后台写入后做最终备份
 cd C:\docbase\app\backend
 $env:DOCBASE_ENV_FILE = 'C:\docbase\config\docbase.env'
 ..\..\venv\Scripts\python.exe scripts\backup.py
-Stop-Service docbase-worker
 ```
 
 ### 3. 把备份和证书拷到新机器
+
+先检查备份清单 `missing` 为空且数据库备份存在。当前“最近备份成功”不能替代完整性检查；有缺失时先修复或补齐，不切换正式服务。
 
 - **整个备份目录**（如 `C:\docbase-backup`）复制到新机器的备份目录。
 - 想让各电脑不用重新安装根证书：把旧机器的 `C:\docbase\proxy\data` 文件夹复制到新机器同一位置（覆盖）。
@@ -48,7 +49,7 @@ $env:DOCBASE_ENV_FILE = 'C:\docbase\config\docbase.env'
 ..\..\venv\Scripts\python.exe scripts\restore.py --to docbase --data-dir E:\docbase-data --force
 ```
 
-按提示输入库名 `docbase` 确认。最后列出的数量要全部"一致"。
+按提示输入库名 `docbase` 确认。数量应全部“一致”，但这不包含文件哈希校验；还需确认备份清单 `missing` 为空，核对恢复实体 SHA-256，并抽查文件可打开。
 
 ### 5. 启动并检查
 

@@ -1,5 +1,5 @@
-# 远程 CI（第 8C 步）：推到 GitHub 后自动跑代码检查、名称扫描、全部测试。
-# 禁用名称清单放在仓库 Settings → Secrets 的 DOCBASE_FORBIDDEN_NAMES（逗号分隔），不写进仓库。
+# 远程 CI：在 runner 中准备环境，执行产品代码检查、测试和部署验证。
+# 本地 Git 提交不运行这些检查，也不依赖开发机的 Python 或私人名称清单。
 # 第 17B 步加了 Linux 部署验证：docker 方式、systemd 方式各真装一遍并冒烟测试、备份恢复。
 # 在 Actions 页面手动运行（Run workflow）时，另外打 Linux 离线安装包（含 docker 镜像），在运行结果里下载。
 name: checks
@@ -27,7 +27,6 @@ jobs:
     env:
       DOCBASE_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/docbase
       DOCBASE_TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/docbase_test
-      DOCBASE_FORBIDDEN_NAMES: ${{ secrets.DOCBASE_FORBIDDEN_NAMES }}
       # runner 自带的 pg_dump 是 16，不能备份 17 的库；用上一步装的 17
       DOCBASE_PG_BIN: /usr/lib/postgresql/17/bin
       PYTHONIOENCODING: utf-8
@@ -179,7 +178,9 @@ jobs:
           V="$(python3 -c "import tomllib; print(tomllib.load(open('backend/pyproject.toml','rb'))['project']['version'])")-$(date +%Y%m%d)-$(git rev-parse --short HEAD)"
           echo "V=$V" >> "$GITHUB_ENV"
           docker build -f deploy/linux/Dockerfile -t "docbase:$V" --build-arg VERSION="$V" .
-          docker save "docbase:$V" -o docbase-image.tar
+          docker pull postgres:17
+          docker pull caddy:2.10.2
+          docker save "docbase:$V" postgres:17 caddy:2.10.2 -o docbase-image.tar
           python3 backend/scripts/release.py --target linux --skip-build --version "$V" --docker-image docbase-image.tar
       - uses: actions/upload-artifact@v4
         with:

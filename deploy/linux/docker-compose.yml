@@ -62,6 +62,9 @@ services:
   worker:
     <<: *docbase
     command: ["python", "scripts/worker.py"]
+    depends_on:
+      api:
+        condition: service_healthy
     # worker 不提供网页，不用镜像里的健康检查
     healthcheck:
       disable: true
@@ -79,7 +82,8 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "5"}

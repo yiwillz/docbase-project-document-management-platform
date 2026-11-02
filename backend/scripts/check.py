@@ -1,8 +1,8 @@
-"""一条命令跑全部检查：代码检查（ruff）→ 真实名称扫描 → 全部测试 → 前端检查。每步结束时跑一次。
+"""开发者主动运行的质量检查：代码检查（ruff）→ 全部测试 → 前端检查。
 
 用法（在 backend 目录，激活虚拟环境后）：
     python scripts/check.py                  全部
-    python scripts/check.py --quick          只跑代码检查、名称扫描、前端代码检查（几秒钟）
+    python scripts/check.py --quick          只跑后端与前端代码检查，不运行测试
     python scripts/check.py --skip-frontend  不跑前端（远程 CI 里前端单独一个任务）
 
 测试连测试库（DOCBASE_TEST_DATABASE_URL）；没配置时测试会被跳过，这里当作失败，避免"看起来全过"。
@@ -50,7 +50,6 @@ def main() -> int:
 
     results = {
         "代码检查（ruff）": run("代码检查（ruff）", [sys.executable, "-m", "ruff", "check", "."]),
-        "名称扫描": run("名称扫描", [sys.executable, "scripts/check_names.py"]),
     }
     if not args.quick:
         sys.path.insert(0, str(BACKEND))

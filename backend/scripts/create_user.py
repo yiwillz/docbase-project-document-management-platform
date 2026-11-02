@@ -22,6 +22,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="建用户 / 重设密码")
     parser.add_argument("--username")
     parser.add_argument("--password", help="不给就交互输入（推荐，不会留在命令历史里）")
+    parser.add_argument("--password-env", help="从指定环境变量读取安装密码，不放进命令行")
     parser.add_argument("--display-name")
     parser.add_argument("--admin", action="store_true", help="设为系统管理员")
     parser.add_argument("--test", action="store_true", help="建在测试库里")
@@ -54,8 +55,15 @@ def main() -> None:
             return
         print("还没有任何用户，请建第一个系统管理员：")
     username = args.username or input("用户名：").strip()
-    password = args.password or getpass.getpass(f"密码（至少 {get_settings().password_min_length} 位）：")
-    if not args.password and getpass.getpass("再输一次：") != password:
+    supplied_password = args.password
+    if args.password_env:
+        if args.password:
+            sys.exit("--password 和 --password-env 不能同时使用")
+        supplied_password = os.environ.pop(args.password_env, None)
+        if not supplied_password:
+            sys.exit("安装密码环境变量为空")
+    password = supplied_password or getpass.getpass(f"密码（至少 {get_settings().password_min_length} 位）：")
+    if not supplied_password and getpass.getpass("再输一次：") != password:
         sys.exit("两次输入的密码不一样")
     actor = Actor(name="create_user.py")
     with Session(get_engine()) as session:

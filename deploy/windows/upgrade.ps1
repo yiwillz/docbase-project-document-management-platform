@@ -1,4 +1,4 @@
-<#
+﻿<#
 docbase 升级。在解压后的**新版本**安装包目录里，用"以管理员身份运行"的 PowerShell 执行：
 
   Set-ExecutionPolicy -Scope Process Bypass
@@ -15,6 +15,7 @@ param(
 . (Join-Path $PSScriptRoot 'common.ps1')
 trap { Show-Failure $_; exit 1 }
 $Package = $PSScriptRoot
+Assert-InstallPackage $Package
 $Version = (Get-Content (Join-Path $Package 'VERSION') -Raw).Trim()
 $EnvFile = Join-Path $InstallDir 'config\docbase.env'
 if (-not (Test-Admin)) { Stop-WithError '请用"以管理员身份运行"的 PowerShell 执行' }

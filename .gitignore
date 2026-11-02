@@ -2,6 +2,20 @@
 __pycache__/
 *.pyc
 .env
+.env.*
+!.env.example
+setup-credentials.json
+postgres-install-options.txt
+docbase.env
+*.key
+*.pem
+*.pfx
+*.p12
+*.dump
+*.backup
+*.sqlite
+*.sqlite3
+packages/
 data/
 data_test/
 node_modules/
@@ -38,9 +52,14 @@ deploy/linux/docbase.env
 # 本机 AI 编程助手的说明，不进仓库
 CLAUDE.md
 .claude/
+.local-tools/
+.githooks/
 
 # 开发过程记录，只留本地
 docs/step/
 docs/steps.md
 docs/market.md
 docs/decisions.md
+docs/deployment-audit.zh-CN.md
+docs/open-source-review.zh-CN.md
+deploy/windows/VALIDATION.zh-CN.md

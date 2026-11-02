@@ -32,7 +32,11 @@ say "docbase $VERSION（docker）安装"
 
 step "1/6 检查"
 command -v docker >/dev/null || die "没有 docker，请先安装 Docker Engine（https://docs.docker.com/engine/install/）"
+require_root
+command -v curl >/dev/null || die "没有 curl，请先安装 curl"
 docker compose version >/dev/null 2>&1 || die "没有 docker compose 插件（apt install docker-compose-plugin）"
+compose_version=$(docker compose version --short | sed 's/^v//; s/-.*//')
+[ "$(printf '%s\n' 2.24.0 "$compose_version" | sort -V | head -n 1)" = 2.24.0 ] || die "需要 Docker Compose 2.24.0 或更新版本"
 docker info >/dev/null 2>&1 || die "连不上 docker（用 sudo 运行，或把当前用户加进 docker 组）"
 ok "$(docker --version)；$(docker compose version)"
 
@@ -48,6 +52,13 @@ elif [ -f ../../backend/pyproject.toml ]; then
 else
   die "没有镜像：安装包里没有 docbase-image.tar，也不在源码目录里"
 fi
+
+docker image inspect "docbase:$VERSION" >/dev/null 2>&1 || die "镜像包没有 docbase:$VERSION，请检查 VERSION 与镜像标签是否一致"
+for image in postgres:17 caddy:2.10.2; do
+  if ! docker image inspect "$image" >/dev/null 2>&1; then
+    docker pull "$image" || die "缺少 $image；离线部署请提供包含三个镜像的 docbase-image.tar"
+  fi
+done
 
 step "3/6 设置（.env）"
 if [ -f .env ]; then
@@ -66,9 +77,9 @@ DB_PASSWORD=$(random_secret)
 SITE_ADDRESS="$sites, https://localhost"
 HTTPS_PORT=443
 HTTP_PORT=80
-DATA_DIR=$DATA_DIR
-BACKUP_DIR=$BACKUP_DIR
-LOG_DIR=$LOG_DIR
+DATA_DIR="$DATA_DIR"
+BACKUP_DIR="$BACKUP_DIR"
+LOG_DIR="$LOG_DIR"
 BACKUP_HOUR=1
 BACKUP_DAYS=30
 TZ=$TZ_NAME
@@ -84,8 +95,9 @@ done
 ok "目录：文件 $DATA_DIR、备份 $BACKUP_DIR、日志 $LOG_DIR"
 
 step "4/6 启动"
-docker compose up -d
-wait_until 120 "docker compose exec -T api python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)\"" \
+docker compose config --quiet
+docker compose up -d --no-build --pull never
+wait_until 120 "docker compose exec -T api python scripts/healthcheck.py" \
   || { docker compose logs --tail 50 api; die "后端没有正常启动（上面是后端日志）"; }
 ok "后端正常"
 

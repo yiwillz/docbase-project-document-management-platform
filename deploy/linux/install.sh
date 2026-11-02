@@ -43,7 +43,7 @@ step "1/8 检查系统、安装系统软件"
 if [ "${ID:-}" != ubuntu ] || [ "${VERSION_ID:-}" != 24.04 ]; then
   warn "这个脚本按 Ubuntu 24.04 写的，当前是 ${PRETTY_NAME:-未知}；其他系统建议用 docker-install.sh"
 fi
-pkgs="python3.12 python3.12-venv curl"
+pkgs="python3.12 python3.12-venv curl postgresql-client fonts-wqy-microhei"
 [ -z "$DATABASE_URL" ] && pkgs="$pkgs postgresql"
 [ "$PROXY" = caddy ] && pkgs="$pkgs caddy"
 export DEBIAN_FRONTEND=noninteractive

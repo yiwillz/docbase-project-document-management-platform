@@ -18,6 +18,8 @@ English | [简体中文](README.zh-CN.md)
 
 ## About
 
+**Status: v1 pilot acceptance in progress.** Core workflows are implemented and basic Windows deployment has been verified locally. AI is not implemented; capacity, performance and failure-recovery targets are not fully accepted. Documentation (Chinese): [architecture and acceptance](docs/architecture.md) · [user guide](docs/user-guide.md).
+
 When a company delivers machines or a complete production line, every piece of equipment comes with a stack of documents the client expects:
 
 - datasheets and drawings;
@@ -41,12 +43,12 @@ It suits equipment manufacturers, automation and production-line integrators, an
 
 - **Project structure.** Milestones, document types and modules, set up in the platform. Use standard templates or copy from another project.
 - **Equipment register.** Import from Excel with a preview. Equipment can be counted by quantity and tags are optional. Full history with restore.
-- **Deliverables generated automatically.** One per linked equipment item, per module, or per milestone, depending on the document type.
+- **Deliverables generated automatically.** One per linked equipment entry, per module, or per document type, depending on its configuration.
 - **Upload without forms.** Drop a batch of files: the platform recognises the deliverable from the file and folder names and the equipment list, and you confirm.
 - **Automatic naming and versioning.**
   - Naming follows a per-project template.
-  - Re-uploading a file with the same title and format creates the next version.
-  - Older versions go to a 90-day recycle area.
+  - Re-uploading within the same deliverable with the same title and format creates the next version.
+  - Vendor and internal files keep the latest three versions by default; older versions are recycled for 90 days. Client files and versions referenced by transmittals or baselines are protected.
 - **Deliverable matrix.** Completion, received, outstanding and overdue at a glance. Filters can be shared as a link.
 - **Client document register (MDL / VDR).** Exported to Excel or PDF in a uniform format, with recorded revisions, a diff against the previous issue, and import of the client's reply.
 - **Transmittals and review codes.**
@@ -60,7 +62,7 @@ It suits equipment manufacturers, automation and production-line integrators, an
 - **Legacy import.** Scan existing folders: de-duplicate, merge versions, review a dry-run report, then import in the background. A whole batch can be undone.
 - **Accounts and audit.** Roles and project membership. Every change is logged field by field (before → after, who, why) and can be exported.
 - **Operations.**
-  - Daily backups, with restore verification.
+  - Scheduled backups when configured and the worker is running; completeness checks and restore drills are required.
   - Daily log files.
   - Storage-offline alarm.
 - **Bilingual UI.** Chinese and English.
@@ -74,7 +76,7 @@ It suits equipment manufacturers, automation and production-line integrators, an
 | Frontend | Vue 3, TypeScript, Vite, Element Plus, vue-i18n |
 | Testing | pytest, Vitest, Playwright |
 | Deployment | Windows services (WinSW + Caddy), Docker Compose, systemd |
-| CI | GitHub Actions: tests, then clean installs on Linux via Docker and systemd |
+| CI | GitHub Actions defines backend/frontend checks and Linux install jobs; consult the run for the relevant commit |
 
 ## Architecture
 
@@ -90,12 +92,26 @@ It suits equipment manufacturers, automation and production-line integrators, an
                 (import, packages, mirror sync, cleanup, backup)
 ```
 
-- **No Redis or Celery.** Background jobs use a database table with leases, so the worker also runs on Windows and resumes after a crash.
-- **Content-addressed storage.** Each file is stored once. A file and its database record are written together or not at all.
-- **Configuration over code.** Naming templates, review codes, status wording and roles are stored per project.
+- **Background jobs.** A database table and leases coordinate work. Imports save per-item progress; interrupted packages are rebuilt. Long-running lease renewal needs validation.
+- **Content-addressed storage.** Identical content shares a blob. Files are persisted before database commit; failed transactions can leave orphan blobs for cleanup. This is not an atomic disk/database transaction.
+- **Configuration.** Naming templates, review codes and status wording are configured per project. Roles are stored in the database and assigned through project membership.
 - **Route-level permissions.** A single rule table covers every API route, and a test fails if a new route has no rule.
 
-## Getting Started
+## Install and Use
+
+On a new Windows x64 computer, extract the complete current release package to a short path and double-click **`install.cmd`**. Accept the administrator prompt. Initial online installation requires internet access and App Installer / winget; it prepares Python 3.12, PostgreSQL 17 and the services. Git and Node are not needed for a release package.
+
+Open `https://localhost` after installation. The initial account is `admin`; read its generated password as an administrator from `C:\docbase\config\setup-credentials.json`, then change it. Services start automatically. LAN access requires a configured server address and client certificate trust.
+
+With the complete source tree, run from the repository root:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\install.ps1
+```
+
+Source installation also prepares the frontend build environment. Offline installation requires preinstalled Python/PostgreSQL and `install.ps1 -Offline` from a complete release package. See the [Windows](docs/install-windows.md) or [Linux](docs/install-linux.md) operations guide.
+
+## Developer Setup
 
 ### Prerequisites
 
@@ -121,13 +137,15 @@ pip install -e ".[dev]"
 cp .env.example .env               # set the database URLs and DOCBASE_DATA_DIR
 python scripts/test_server.py      # http://localhost:8001, migrations run automatically
 
-# frontend (in another terminal)
+# frontend (another terminal, starting at the repository root)
 cd frontend
-npm install
+npm ci
 npm run dev                        # http://localhost:5173
 ```
 
-### Demo accounts
+Run `python scripts/worker.py --test` in a third terminal with the backend environment activated for imports and delivery jobs. Full Windows development instructions are in [setup.md](docs/setup.md).
+
+### Test-database Accounts Only
 
 The test server creates these accounts on start:
 
@@ -140,7 +158,7 @@ The test server creates these accounts on start:
 
 ## Deployment
 
-- **Windows 10/11:** an offline installer registers the backend, the worker and the reverse proxy as Windows services. See [docs/install-windows.md](docs/install-windows.md).
+- **Windows 10/11 x64:** online environment preparation or offline installation with prerequisites; the backend, worker and reverse proxy run as Windows services. See [docs/install-windows.md](docs/install-windows.md).
 - **Linux:** Docker Compose, or systemd with an offline package. See [docs/install-linux.md](docs/install-linux.md).
 
 Database migrations run automatically on upgrade. Backup and restore are built in.
@@ -149,17 +167,32 @@ Database migrations run automatically on upgrade. Backup and restore are built i
 
 ```bash
 cd backend
-python scripts/check.py            # lint, name scan, backend tests, frontend checks, end-to-end tests
-python scripts/check.py --quick    # lint and scan only
+python scripts/check.py            # lint, backend tests, frontend checks, end-to-end tests
+python scripts/check.py --quick    # backend lint and frontend lint; no tests
 ```
 
-The suite has about 400 backend tests, frontend unit tests and Playwright end-to-end tests. All of them run against a separate test database.
+The repository includes pytest, Vitest and Playwright tests. Database tests use a separate test database; pure unit tests do not require one. Backend tests rebuild the test schema, so do not share it with an active manual test session. Use actual run output for counts and results.
 
 ## Roadmap
 
-- [x] **v1: Document base.** Structure, deliverables, naming, versions, MDL, transmittals, delivery, legacy import, deployment.
+- **v1: Document base — pilot acceptance in progress.** Core workflows are implemented. Evidence is still needed for 80 GB imports, 90% classification accuracy, 20 concurrent users and fault recovery.
 - [ ] **v2: AI.** Knowledge-base Q&A over project documents, AI pre-review of submittals.
 - [ ] **v3: Workflow.** Internal approval flows, push to other project management platform like jira.
+
+## Documentation and Repository Scope
+
+| Task | Documentation (Chinese) |
+|---|---|
+| Architecture and acceptance gaps | [Architecture](docs/architecture.md) |
+| Daily use | [User guide](docs/user-guide.md) |
+| Requirements | [PRD](docs/PRD.md) |
+| Installation and operations | [Windows](docs/install-windows.md) / [Linux](docs/install-linux.md) |
+| Development | [Setup](docs/setup.md) |
+| Data model and migration | [Database](docs/database.md) / [Machine migration](docs/migrate-machine.md) |
+
+The repository includes source, tests, migrations, CI, release/deployment tools and product documentation. Private samples, personal keyword lists, machine-specific audit records, AI work notes, credentials, environments, logs and databases stay local.
+
+Git commit and push do not require Python. There is no mandatory commit hook; developers run `check.py` explicitly. CI prepares its own runner environment and does not depend on a local virtual environment or private keyword list.
 
 ## License
 

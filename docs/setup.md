@@ -1,6 +1,6 @@
-# 环境准备（Windows）
+# 开发环境准备（Windows）
 
-开发机和运行机（Surface Pro 7）都需要下面这些软件。开发机已有 VS Code 的可以跳过对应项。
+本手册面向修改源码和运行测试的开发者。只安装使用平台，请按 [Windows 安装手册](install-windows.md) 双击完整包中的 `install.cmd`；运行机无需 Git、Node、VS Code 或开发虚拟环境。项目定位与架构见 [项目说明](../README.zh-CN.md)。
 
 | 软件 | 版本 | 说明 |
 |---|---|---|
@@ -14,21 +14,24 @@
 
 1. 把仓库克隆到一个短路径下（例如 `D:\work\docbase`，不要放在其他项目或 `.venv` 里面）：
    ```powershell
-   git clone https://github.com/<账号>/<仓库名>.git D:\work\docbase
+   git clone https://github.com/yiwillz/docbase-project-document-management-platform.git D:\work\docbase
    ```
    根目录应能看到 `README.md`、`docs\`、`backend\`、`frontend\`、`deploy\`。
-2. 建数据库（打开 pgAdmin，或在 PowerShell 里运行）：
+2. 建独立测试数据库（打开 pgAdmin，或在 PowerShell 里运行；`docbase` 已存在时不要重复创建）：
    ```powershell
    psql -U postgres -c "create database docbase;"
    psql -U postgres -c "create database docbase_test;"
    ```
 3. 建虚拟环境并安装后端依赖（在 backend 目录）：
    ```powershell
+   python --version                 # 确认解释器为 Python 3.12.x
    python -m venv .venv
    .\.venv\Scripts\Activate.ps1
    pip install -e ".[dev]"
    ```
 4. 按下一节配置 `backend/.env`，然后启动连测试库的后端：`python scripts/test_server.py`（启动时自动执行数据库迁移）。
+
+不要复制其他电脑的 `.venv`。若提示找不到原电脑的 Python，请先将旧 `.venv` 重命名留存，再用本机 Python 3.12 重建并安装依赖。安装实例 `C:\docbase\venv` 与源码 `backend/.venv` 互不替代。
 
 ## 数据库连接配置
 
@@ -48,11 +51,12 @@ DOCBASE_DATA_DIR=D:/docbase-data
 DOCBASE_IMPORT_ROOTS=D:/old-projects
 ```
 
+数据库 URL 密码中的 `@`、`:`、`/` 等保留字符需要先进行 URL 编码。开发配置只用于本机测试，不复制运行实例的凭据文件。
+
 后台 worker（存量导入、每天的例行清理）是单独的进程，和后端一起开着（在 backend 目录、激活虚拟环境后）：
 
 ```powershell
-python scripts/worker.py          # 连正式库
-python scripts/worker.py --test   # 连测试库（文件存 backend/data_test），试用时用这个
+python scripts/worker.py --test   # 开发时只连测试库，文件存 backend/data_test
 ```
 
 正式安装时，安装脚本会把后端和 worker 都注册成 Windows 服务，开机自启，见 [install-windows.md](install-windows.md)；Linux 见 [install-linux.md](install-linux.md)。`.env` 里其他配置项（日志、备份等）的说明在 `backend/.env.example` 里。
@@ -66,19 +70,19 @@ DOCBASE_MIRROR_MODE=link                         # link 硬链接（默认）/ c
 
 **用硬链接时，这个共享必须由 IT 设成只读**（共享权限里只给读）。硬链接和平台存储是同一份数据：有人在共享盘上直接改了镜像里的文件，平台存的那一版也跟着变。平台会把镜像里的文件设成只读，但这个属性别人可以去掉，挡不住。IT 做不到只读共享时改用 `DOCBASE_MIRROR_MODE=copy`（多占一倍空间）。镜像目录和数据目录不在同一块盘、或者盘不支持硬链接（如 exFAT 的 U 盘）时，平台会自动改成复制。
 
-## 前端（第 9 步起）
+## 前端
 
 第一次（在 frontend 目录）：
 ```powershell
-npm install
+npm ci
 ```
 
 **开发时**（改前端代码，页面会自动刷新）：
 1. 另开一个终端，在 backend 目录启动连测试库的后端：`python scripts/test_server.py`（8001 端口）
 2. 在 frontend 目录：`npm run dev`，浏览器打开 http://localhost:5173
-3. 页面里的接口请求会转到 8001。想连正式库的后端（`uvicorn app.main:app --reload`，8000 端口）时，在 frontend 目录建一个 `.env.local`，写一行 `VITE_API_TARGET=http://localhost:8000`
+3. 页面里的接口请求会转到 8001。保留开发与正式实例的隔离；不要为页面试验将代理指向运行中的正式库。
 
-**正式运行**：在 frontend 目录 `npm run build`，打包结果在 `frontend/dist`；后端启动后直接打开 http://localhost:8000 就是页面，不需要另外起前端，也不依赖外网。
+**发布运行**：`npm run build` 生成 `frontend/dist`，发布包由 FastAPI 提供页面，Caddy 提供 HTTPS；安装后的入口是 `https://localhost` 或配置的服务器地址，不需要另外运行 Vite。
 
 **登录**（第 16 步起）：
 - 连测试库的后端（`python scripts/test_server.py`）启动时会自动建测试账号，并在终端里显示：
@@ -86,7 +90,7 @@ npm install
   - `test_admin`（项目管理员）、`test_member`（成员）、`test_viewer`（只读），密码都是 `test12345`。启动时会把它们加进测试库里每个没归档的项目；之后新建的项目，重启测试后端时再加。
   - 想看不同角色看到的界面，就退出登录换一个账号。
 - 测试库里积累了太多自动测试建的项目时：先停掉连测试库的后端和 worker，再运行 `python scripts/reset_test_db.py`，清空测试库和测试文件、重建上面的测试账号。只对测试库有效。
-- 正式库刚装好时没有任何账号，先在 backend 目录建第一个系统管理员（按提示输入用户名和密码，密码不显示）：
+- 自动安装脚本会创建初始管理员。只有手动初始化的空数据库才需要用下面的运维命令创建管理员（必须确认连接的是预期数据库；开发中用 `--test`）：
   ```powershell
   python scripts/create_user.py --admin
   ```
@@ -94,24 +98,22 @@ npm install
 
 **页面自动测试**（第 10 步起）：在 frontend 目录 `npm run e2e`。它会自己启动连测试库的后端（8021 端口）和打包好的前端（5193 端口），用电脑上装的 Chrome 按主流程点一遍，跑完自动关掉，不需要你开着前后端。`check.py` 每步结束也会跑它。
 
-## 自动检查（第 8C 步起）
+## 开发检查与 Git 提交
 
-1. 启用提交前检查（每台电脑执行一次，在项目根目录）：
-   ```powershell
-   git config core.hooksPath .githooks
-   ```
-   之后每次 `git commit` 会自动做名称扫描和代码检查，不通过就拒绝提交。
-2. 禁用名称清单放在 `backend/tests/fixtures/private/forbidden_names.txt`（一行一个，不提交）。换电脑时要把它一起拷过去，否则名称扫描会提醒"没有清单"并跳过。
-3. 每步结束跑一次全部检查（在 backend 目录、激活虚拟环境后）：
-   ```powershell
-   python scripts/check.py           # 代码检查 + 名称扫描 + 全部测试
-   python scripts/check.py --quick   # 只跑前两项，几秒钟
-   ```
-   代码检查报错时，多数可以用 `python -m ruff check . --fix` 自动修。
-4. 推到 GitHub 后，`.github/workflows/ci.yml` 会在每次推送时自动跑同样的检查。先在仓库 Settings → Secrets and variables → Actions 里加一个 `DOCBASE_FORBIDDEN_NAMES`，内容是禁用名称、用逗号分隔。
+Git 提交和推送不需要 Python。本项目不再提供强制提交钩子；代码检查由开发者主动运行，GitHub Actions 在自己的 runner 中安装依赖并运行，不使用你电脑上的虚拟环境。
+
+```powershell
+# 在 backend 目录，使用本机开发虚拟环境
+.\.venv\Scripts\python.exe scripts/check.py --quick  # 后端和前端 lint
+.\.venv\Scripts\python.exe scripts/check.py          # 完整测试与前端检查
+```
+
+完整后端测试会重建测试库结构，运行前停止使用同库的人工测试后端和 worker。旧电脑复制来的 `.venv` 不可用时重建开发环境；这不应阻止 Git 提交。
+
+公开仓库保留源码、测试、迁移、构建和部署工具、用户与运维文档。真实项目样本、私人名称清单、本机审计报告、AI 工作记录、数据库和凭据不上传。私人关键词扫描是本地可选检查，不属于产品功能，也不作为 CI 的必需项。
 
 ## 常见问题
 
-- **PowerShell 不让运行 Activate.ps1**：以管理员身份运行一次 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`。
+- **PowerShell 不让运行 Activate.ps1**：当前终端运行 `Set-ExecutionPolicy -Scope Process Bypass`，或直接使用 `.venv\Scripts\python.exe`，无需修改整台电脑的策略。
 - **psql 找不到**：把 `C:\Program Files\PostgreSQL\<版本号>\bin` 加到系统 PATH，或者直接用 pgAdmin 建库。
 - **测试样本**：`backend/tests/fixtures/private/sample_mdl.xlsx` 是真实项目的 MDL，这个文件夹已被 git 忽略，不会提交到仓库；换电脑时要手动复制过去。仓库里只放虚构样本。

@@ -3,7 +3,7 @@
 > 对应代码：`backend/app/models.py`；迁移：`backend/alembic/versions/`。
 > **改了 models.py 必须同步更新本文件**，并运行 `alembic revision --autogenerate -m "说明"` 生成迁移（测试 `test_models_match_migrations` 会检查模型和迁移是否一致）。
 
-共 27 张业务表（另有 Alembic 自用的 `alembic_version`）。
+当前模型共 33 张表（包含认证、任务、事件等支持表，另有 Alembic 自用的 `alembic_version`）。
 
 **带全部字段的分组关系图见 [database-erd.md](database-erd.md)**（由 `backend/scripts/gen_erd.py` 自动生成，改 models.py 后在 backend 目录运行 `python scripts/gen_erd.py` 重新生成）。
 

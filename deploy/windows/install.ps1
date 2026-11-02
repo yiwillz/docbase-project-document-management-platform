@@ -1,34 +1,56 @@
-<#
-docbase 一键安装（Windows 10/11）。在解压后的安装包目录里，用"以管理员身份运行"的 PowerShell 执行：
+﻿<#
+docbase 安装入口（Windows 10/11 x64）。默认自动准备环境并申请管理员权限：
 
   Set-ExecutionPolicy -Scope Process Bypass
-  .\install.ps1 -DataDir E:\docbase-data
+  .\install.ps1
+  # 或双击同目录的 install.cmd
 
 常用参数：
-  -DataDir      文件存储目录（外接盘），必填
+  -DataDir      文件存储目录，默认 C:\docbase-data
   -BackupDir    备份目录，默认 C:\docbase-backup
   -InstallDir   安装目录，默认 C:\docbase
-  -Address      访问地址（IP 或名字，多个用逗号分隔），默认本机的局域网 IP
+  -Address      访问地址（IP 或名字，多个用逗号分隔），在线默认 localhost，离线默认本机局域网 IP
   -DatabaseUrl  用已有的数据库（不自动建库）；不给就用 PostgreSQL 超级用户自动建库和账号
   -NoService    试装：不注册服务、不开防火墙、不建 HTTPS，只装好并启动一次后端检查（开发验证用）
+  -Offline      完整发布包的离线安装：Python 和 PostgreSQL 已由 IT 预装
 
-先装好：Python 3.12（勾选 Add to PATH）、PostgreSQL 16 或 17。详细说明见 docs\install-windows.md。
+默认在线安装无需预装 Python、PostgreSQL、Git；源码部署还会准备前端构建环境。
 #>
 param(
-    [Parameter(Mandatory = $true)][string]$DataDir,
+    [string]$DataDir = 'C:\docbase-data',
     [string]$BackupDir = 'C:\docbase-backup',
     [string]$InstallDir = 'C:\docbase',
     [string]$Address = '',
     [string]$DatabaseUrl = '',
     [string]$PgSuperUser = 'postgres',
     [string]$DbName = 'docbase',
+    [Security.SecureString]$PgPassword,
+    [string]$AdminUser = 'admin',
+    [Security.SecureString]$AdminPassword,
     [switch]$NoService,
-    [switch]$SkipAdmin
+    [switch]$SkipAdmin,
+    [switch]$Offline,
+    [switch]$UseExistingFrontend,
+    [Parameter(DontShow = $true)][switch]$EnvironmentReady
 )
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 trap { Show-Failure $_; exit 1 }
+if (-not $EnvironmentReady -and -not $Offline -and -not $NoService) {
+    if ($DatabaseUrl -or $PgSuperUser -ne 'postgres' -or $DbName -ne 'docbase' -or
+        $AdminUser -ne 'admin' -or $AdminPassword -or $SkipAdmin) {
+        Stop-WithError '自定义数据库或管理员等高级参数请在完整发布包中配合 -Offline 使用'
+    }
+    $bootstrapArgs = @{
+        InstallDir=$InstallDir; DataDir=$DataDir; BackupDir=$BackupDir
+        Address=$(if ($Address) { $Address } else { 'localhost' })
+        PostgresPassword=$PgPassword; UseExistingFrontend=$UseExistingFrontend
+    }
+    & (Join-Path $PSScriptRoot 'bootstrap.ps1') @bootstrapArgs
+    exit $LASTEXITCODE
+}
 $Package = $PSScriptRoot
+Assert-InstallPackage $Package
 $Version = (Get-Content (Join-Path $Package 'VERSION') -Raw).Trim()
 Write-Host "docbase $Version 安装" -ForegroundColor Cyan
 
@@ -43,12 +65,13 @@ if (-not $Python) { Stop-WithError '没找到 Python 3.12。请先安装 Python 
 Write-Ok "Python：$Python"
 $Pg = Find-PostgreSQL
 if (-not $Pg) { Stop-WithError '没找到 PostgreSQL。请先安装 PostgreSQL 17（或 16），记住安装时设的 postgres 密码' }
-if ($Pg.Version -lt 16) { Stop-WithError "PostgreSQL 版本是 $($Pg.Version)，需要 16 或更新" }
+if ($Pg.Version -notin @(16, 17)) { Stop-WithError "PostgreSQL 版本是 $($Pg.Version)，当前安装包支持 16 或 17" }
+if ($DbName -notmatch '^[a-z_][a-z0-9_]{0,62}$') { Stop-WithError '数据库名只能包含小写字母、数字、下划线，不能以数字开头，最长 63 个字符' }
 Write-Ok "PostgreSQL $($Pg.Version)：$($Pg.Bin)（服务 $($Pg.Service)）"
 $DataDir = [IO.Path]::GetFullPath($DataDir)
 $BackupDir = [IO.Path]::GetFullPath($BackupDir)
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
-if ($DataDir.StartsWith($InstallDir, [StringComparison]::OrdinalIgnoreCase)) { Stop-WithError '文件存储目录不要放在安装目录里面（升级会换掉安装目录里的程序）' }
+if (Test-PathWithin $DataDir $InstallDir) { Stop-WithError '文件存储目录不要放在安装目录里面（升级会换掉安装目录里的程序）' }
 foreach ($d in @($DataDir, $BackupDir)) {
     try { New-Item -ItemType Directory -Force $d | Out-Null; $probe = Join-Path $d '.probe'; 'ok' | Set-Content $probe; Remove-Item $probe }
     catch { Stop-WithError "目录 $d 不能写：$($_.Exception.Message)" }
@@ -84,20 +107,22 @@ if (Test-Path $EnvFile) {
 } elseif ($DatabaseUrl) {
     Write-Ok '用指定的数据库'
 } else {
-    $secure = Read-Host "请输入 PostgreSQL 超级用户 $PgSuperUser 的密码（安装 PostgreSQL 时设的）" -AsSecureString
-    $env:PGPASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
+    $secure = $PgPassword
+    if (-not $secure) { $secure = Read-Host "请输入 PostgreSQL 超级用户 $PgSuperUser 的密码（安装 PostgreSQL 时设的）" -AsSecureString }
+    $env:PGPASSWORD = ConvertFrom-ProtectedString $secure
+    try {
     $psql = Join-Path $Pg.Bin 'psql.exe'
     $role = 'docbase'
     $dbPassword = New-Secret
     function Invoke-Psql([string]$Sql) {
-        $out = & $psql -h localhost -U $PgSuperUser -d postgres -v ON_ERROR_STOP=1 -tA -c $Sql 2>&1
-        if ($LASTEXITCODE -ne 0) { Stop-WithError "数据库操作失败：$out" }
-        return ($out | Out-String).Trim()
+        $result = Invoke-NativeCapture $psql @('-h', 'localhost', '-U', $PgSuperUser, '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-tA', '-c', $Sql)
+        if ($result.Code -ne 0) { Stop-WithError "数据库操作失败：$($result.Output)" }
+        return $result.Output
     }
     if ((Invoke-Psql "SELECT 1 FROM pg_roles WHERE rolname = '$role'") -eq '1') {
-        Invoke-Psql "ALTER ROLE $role LOGIN PASSWORD '$dbPassword'" | Out-Null
+        Invoke-Psql "ALTER ROLE $role LOGIN CREATEDB PASSWORD '$dbPassword'" | Out-Null
     } else {
-        Invoke-Psql "CREATE ROLE $role LOGIN PASSWORD '$dbPassword'" | Out-Null
+        Invoke-Psql "CREATE ROLE $role LOGIN CREATEDB PASSWORD '$dbPassword'" | Out-Null
     }
     if ((Invoke-Psql "SELECT 1 FROM pg_database WHERE datname = '$DbName'") -eq '1') {
         Write-Warn2 "数据库 $DbName 已经存在，沿用（不会清空）"
@@ -105,9 +130,9 @@ if (Test-Path $EnvFile) {
     } else {
         Invoke-Psql "CREATE DATABASE $DbName OWNER $role ENCODING 'UTF8' TEMPLATE template0" | Out-Null
     }
-    Remove-Item Env:\PGPASSWORD
     $DatabaseUrl = "postgresql+psycopg://${role}:$dbPassword@localhost:5432/$DbName"
     Write-Ok "数据库 $DbName、账号 $role（随机密码，写在配置文件里）"
+    } finally { Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue }
 }
 
 # ---------------------------------------------------------------- 5. 配置文件
@@ -129,7 +154,13 @@ Write-Step '6/9 升级数据库结构'
 Invoke-BackendScript $InstallDir @('scripts\migrate.py')
 if (-not $SkipAdmin) {
     Write-Step '   第一个系统管理员'
-    Invoke-BackendScript $InstallDir @('scripts\create_user.py', '--admin', '--if-none')
+    if ($AdminPassword) {
+        $env:DOCBASE_SETUP_PASSWORD = ConvertFrom-ProtectedString $AdminPassword
+        try {
+            Invoke-BackendScript $InstallDir @('scripts\create_user.py', '--admin', '--if-none',
+                '--username', $AdminUser, '--password-env', 'DOCBASE_SETUP_PASSWORD')
+        } finally { Remove-Item Env:\DOCBASE_SETUP_PASSWORD -ErrorAction SilentlyContinue }
+    } else { Invoke-BackendScript $InstallDir @('scripts\create_user.py', '--admin', '--if-none') }
 }
 
 if ($NoService) {
@@ -158,12 +189,12 @@ Write-Step '7/9 HTTPS 代理（Caddy）'
 $ProxyDir = Join-Path $InstallDir 'proxy'
 New-Item -ItemType Directory -Force $ProxyDir | Out-Null
 Copy-Item (Join-Path $Package 'bin\caddy.exe') (Join-Path $ProxyDir 'caddy.exe') -Force
-$sites = ($Address.Split(',') | ForEach-Object { "https://$($_.Trim())" }) + 'https://localhost'
+$sites = @($Address.Split(',') | ForEach-Object { "https://$($_.Trim())" }) + @('https://localhost')
 Expand-Template (Join-Path $Package 'templates\Caddyfile.template') (Join-Path $ProxyDir 'Caddyfile') @{
-    SITES = ($sites | Select-Object -Unique) -join ', '; API_PORT = $ApiPort; LOG_DIR = (Join-Path $InstallDir 'logs')
+    SITES = ($sites | Select-Object -Unique) -join ', '; API_PORT = $ApiPort; LOG_DIR = (Join-Path $InstallDir 'logs').Replace('\', '/')
 }
-& (Join-Path $ProxyDir 'caddy.exe') validate --config (Join-Path $ProxyDir 'Caddyfile') --adapter caddyfile 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) { Stop-WithError "Caddyfile 检查没通过：$ProxyDir\Caddyfile" }
+$validation = Invoke-NativeCapture (Join-Path $ProxyDir 'caddy.exe') @('validate', '--config', (Join-Path $ProxyDir 'Caddyfile'), '--adapter', 'caddyfile')
+if ($validation.Code -ne 0) { Stop-WithError "Caddyfile 检查没通过：$($validation.Output)" }
 Write-Ok "已生成 $ProxyDir\Caddyfile"
 
 # ---------------------------------------------------------------- 8. 注册服务
