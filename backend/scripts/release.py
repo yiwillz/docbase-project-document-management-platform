@@ -224,6 +224,8 @@ def build(version: str, skip_build: bool, target: str = "windows", docker_image:
     for doc in DOCS:
         if (ROOT / "docs" / doc).is_file():
             shutil.copy2(ROOT / "docs" / doc, stage / "docs" / doc)
+    if (ROOT / "docs" / "assets").is_dir():
+        shutil.copytree(ROOT / "docs" / "assets", stage / "docs" / "assets")
     # 生成的文本文件一律 LF（Windows 上 write_text 默认写 CRLF，Linux 上 VERSION 带 \r 会出错）
     (stage / "VERSION").write_text(version + "\n", encoding="utf-8", newline="\n")
 

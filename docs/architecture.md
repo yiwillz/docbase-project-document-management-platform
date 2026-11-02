@@ -10,17 +10,24 @@ docbase 是企业内网、单租户、多项目的工程文件管理平台，服
 
 ## 2. 运行架构
 
-```mermaid
+![docbase 运行架构：浏览器经 Caddy 访问 API，业务服务与 worker 使用数据库和文件存储](assets/runtime-architecture.svg)
+
+<details>
+<summary>查看 Mermaid 图源（修改后需同步导出的 SVG）</summary>
+
+```text
 flowchart TD
-    Browser[浏览器：Vue 3 / TypeScript / Element Plus] -->|HTTPS| Proxy[Caddy 反向代理]
-    Proxy --> API[FastAPI：接口与前端静态文件]
-    API --> Services[services：业务规则]
-    Services --> DB[(PostgreSQL：业务数据 / 会话 / 任务 / 事件)]
-    Services --> Disk[本地文件存储：暂存区与 SHA-256 实体]
-    Worker[独立 worker] --> DB
+    Browser["浏览器：Vue 3 / TypeScript / Element Plus"] -->|HTTPS| Proxy["Caddy 反向代理"]
+    Proxy --> API["FastAPI：接口与前端静态文件"]
+    API --> Services["services：业务规则"]
+    Services --> DB[("PostgreSQL：业务数据 / 会话 / 任务 / 事件")]
+    Services --> Disk["本地文件存储：暂存区与 SHA-256 实体"]
+    Worker["独立 worker"] --> DB
     Worker --> Disk
-    Worker --> Outputs[交付包 / 共享盘镜像 / 备份]
+    Worker --> Outputs["交付包 / 共享盘镜像 / 备份"]
 ```
+
+</details>
 
 - 这是一个模块化单体：API 与 worker 复用同一套模型和业务服务；不需要微服务、Redis 或 Celery。
 - Windows：`docbase-api`、`docbase-worker`、`docbase-proxy` 三个应用服务，另加 PostgreSQL 服务。试点优先使用此方式。
@@ -45,19 +52,26 @@ flowchart TD
 
 ## 4. 核心数据关系与业务流程
 
-```mermaid
+![项目结构与设备生成应交项，再关联文件版本、客户提交、MDL 和阶段基线](assets/document-data-flow.svg)
+
+<details>
+<summary>查看 Mermaid 图源（修改后需同步导出的 SVG）</summary>
+
+```text
 flowchart LR
-    Structure[里程碑 / 文件种类 / 模块] --> Deliverable[应交项]
-    Equipment[设备条目与关联关系] --> Deliverable
-    Deliverable --> Link[文件与应交项关联]
-    Link --> File[逻辑文件]
-    File --> Version[版本]
-    Version --> Blob[SHA-256 文件实体]
-    Deliverable --> Transmittal[传送单与回复]
-    Transmittal --> State[提交状态 / 闭环检查]
-    Structure --> MDL[MDL 发出版本]
-    Version --> Baseline[阶段基线]
+    Structure["里程碑 / 文件种类 / 模块"] --> Deliverable["应交项"]
+    Equipment["设备条目与关联关系"] --> Deliverable
+    Deliverable --> Link["文件与应交项关联"]
+    Link --> File["逻辑文件"]
+    File --> Version["版本"]
+    Version --> Blob["SHA-256 文件实体"]
+    Deliverable --> Transmittal["传送单与回复"]
+    Transmittal --> State["提交状态 / 闭环检查"]
+    Structure --> MDL["MDL 发出版本"]
+    Version --> Baseline["阶段基线"]
 ```
+
+</details>
 
 文件与应交项通过 `FileDeliverable` 关联，一份文件可覆盖多个应交项，一项也可有多个文件。按设备的应交项按设备条目生成，不按台数展开；无设备、无模块分区时，每个文件种类一个应交项。
 
