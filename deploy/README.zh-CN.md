@@ -4,7 +4,7 @@
 
 ## 新电脑：双击安装（推荐）
 
-1. 复制**最新的完整 Windows 发布包** `docbase-版本-windows.zip`，在属性中解除锁定（若有），完整解压到短路径，例如 `C:\docbase-setup`。不要在压缩包里直接运行，也不要只复制一个脚本。
+1. 复制**最新的完整 Windows 发布包** `docbase-版本-windows.zip`，在属性中解除锁定（若有），完整解压到短路径。不要在压缩包里直接运行，也不要只复制一个脚本。
 2. 双击解压目录的 **`install.cmd`**，接受 Windows 管理员权限提示。默认联网安装缺少的 Python 3.12、PostgreSQL 17，再安装应用服务并验证。需要 64 位 Windows、管理员权限、联网及可用的微软 App Installer / winget；不需要 Git、Node 或提前配置 Python 环境。
 3. 等待成功提示后打开 `https://localhost`。账号 `admin`，随机密码以管理员身份读取 `C:\docbase\config\setup-credentials.json`。失败查看 `C:\docbase\logs\bootstrap.log`。
 
@@ -22,10 +22,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\install
 
 接受 Windows 管理员权限提示后，脚本检查并安装 Python 3.12、PostgreSQL 17；从源码构建前端（没有 Node 时也会安装），在 `C:\docbase\packages` 生成当前版本 Windows 安装包，再安装 API、worker、Caddy 服务和防火墙规则。短的发布目录可避免当前项目嵌套路径触发 Windows 长路径错误。通过微软 winget 下载，首次执行必须联网；需要可用的 App Installer / winget。
 
-默认目录：程序 `C:\docbase`，文件 `C:\docbase-data`，备份 `C:\docbase-backup`，入口 `https://localhost`。其他内网电脑要访问时指定本机固定 IP，例如：
+默认目录：程序 `C:\docbase`，文件 `C:\docbase-data`，备份 `C:\docbase-backup`，入口 `https://localhost`。其他内网电脑要访问时指定本机固定 IP 或域名：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\bootstrap.ps1 -Address 192.168.1.50 -DataDir E:\docbase-data
+$ServerAddress = Read-Host '服务器固定 IP 或域名'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\install.ps1 -Address $ServerAddress
 ```
 
 首次创建的数据库超级用户密码、应用管理员随机密码保存在 `C:\docbase\config\setup-credentials.json`，仅管理员和 SYSTEM 可读。管理员用户名为 `admin`。安装日志在 `C:\docbase\logs\bootstrap.log`。本入口安装的数据库在失败后重试时沿用原凭据，已有应用用户不会被重置。如果原先已经安装了其他 PostgreSQL，脚本不会覆盖或重置其密码，需要在 PowerShell 中用 `-PostgresPassword (Read-Host -AsSecureString)` 传入已有密码，而不是期待自动生成的密码能登录旧数据库。
@@ -36,17 +37,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\bootstr
 
 | 场景 | 方式 | 安装入口 |
 |---|---|---|
-| 当前 Surface Pro 7 试点（8/16 GB、Windows、外接 SSD） | Windows 原生服务：WinSW + FastAPI + worker + Caddy，本机 PostgreSQL | Windows 发布包根目录 `install.ps1` |
+| Windows 工作站或服务器 | Windows 原生服务：WinSW + FastAPI + worker + Caddy，本机 PostgreSQL | Windows 发布包根目录 `install.ps1` |
 | 客户已有 Linux 服务器，需要容器化交付 | Docker Compose：PostgreSQL、API、worker、Caddy | Linux 发布包根目录 `docker-install.sh` |
 | 客户已有 Ubuntu 24.04，禁止容器 | systemd + 本机或外部 PostgreSQL | Linux 发布包根目录 `install.sh` |
 
-当前试点优先修复 Windows 安装和验收，不需要为部署而更换操作系统或在 Surface 上额外安装 Docker。第一版是内网单机单租户系统，不需要 Kubernetes、Redis、Celery、MinIO；AI 仍是第二版范围。
+按目标操作系统选择原生服务或容器部署，Windows 原生服务不依赖 Docker。第一版是内网单机单租户系统，不需要 Kubernetes、Redis、Celery、MinIO；AI 仍是第二版范围。
 
 ## 源码与安装包
 
 - `deploy/windows`：打包时复制的脚本和模板，不是可独立运行的安装包。
 - `deploy/linux`：Docker 可以在源码布局下构建；systemd 安装仍需发布包。发布包启动应使用预加载的镜像。
-- `deploy/nginx`：可选反向代理示例，默认安装使用 Caddy。
+- `deploy/nginx`：可选反向代理配置，默认安装使用 Caddy。
 - `release`：构建产物。现有旧包不自动包含当前修复，重新构建后才能使用新代码。
 - 项目被放在同名父目录里时，先进入包含 `backend`、`frontend`、`deploy` 的内层项目根目录。
 

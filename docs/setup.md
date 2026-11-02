@@ -12,7 +12,7 @@
 
 ## 第一次打开项目
 
-1. 把仓库克隆到一个短路径下（例如 `D:\work\docbase`，不要放在其他项目或 `.venv` 里面）：
+1. 把仓库克隆到一个短路径下（不要放在其他项目或 `.venv` 里面）：
    ```powershell
    git clone https://github.com/yiwillz/docbase-project-document-management-platform.git D:\work\docbase
    ```
@@ -43,7 +43,7 @@ DOCBASE_TEST_DATABASE_URL=postgresql+psycopg://postgres:你的密码@localhost:5
 DOCBASE_DATA_DIR=D:/docbase-data
 ```
 
-正式运行在 Surface Pro 7 上时，`DOCBASE_DATA_DIR` 指向外接盘，例如 `E:/docbase-data`。
+正式运行时，`DOCBASE_DATA_DIR` 指向实际文件存储目录。
 
 要用存量导入时，再加一行允许导入的目录（多个用 `;` 分隔），只有这些目录下的文件能导入：
 
@@ -68,7 +68,7 @@ DOCBASE_MIRROR_DIR=//fileserver/docbase-mirror   # 共享盘上的一个文件�
 DOCBASE_MIRROR_MODE=link                         # link 硬链接（默认）/ copy 复制
 ```
 
-**用硬链接时，这个共享必须由 IT 设成只读**（共享权限里只给读）。硬链接和平台存储是同一份数据：有人在共享盘上直接改了镜像里的文件，平台存的那一版也跟着变。平台会把镜像里的文件设成只读，但这个属性别人可以去掉，挡不住。IT 做不到只读共享时改用 `DOCBASE_MIRROR_MODE=copy`（多占一倍空间）。镜像目录和数据目录不在同一块盘、或者盘不支持硬链接（如 exFAT 的 U 盘）时，平台会自动改成复制。
+**用硬链接时，这个共享必须由 IT 设成只读**（共享权限里只给读）。硬链接和平台存储是同一份数据：有人在共享盘上直接改了镜像里的文件，平台存的那一版也跟着变。平台会把镜像里的文件设成只读，但这个属性别人可以去掉，挡不住。IT 做不到只读共享时改用 `DOCBASE_MIRROR_MODE=copy`（多占一倍空间）。镜像目录和数据目录不在同一块盘、或者盘不支持硬链接时，平台会自动改成复制。
 
 ## 前端
 

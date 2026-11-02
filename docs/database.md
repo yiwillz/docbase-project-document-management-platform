@@ -10,7 +10,7 @@
 ## 通用约定
 
 - 主键：自增整数 `id`；`change_logs`、`events`、`jobs` 用 BigInteger；`blobs` 以 `sha256` 为主键，`event_cursors` 以 `consumer` 为主键。
-- 编号字段一律字符串：里程碑号、Submittal #（`"4.1"` ≠ `"4.10"`）、设备编号、出厂编号。
+- 编号字段一律字符串：里程碑号、Submittal #、设备编号、出厂编号。
 - 枚举存英文代码（VARCHAR + CHECK 约束），界面文字由前端 i18n 翻译。
 - 多数表有 `created_at`、`updated_at`（带时区）。
 - 配置类表有 `active` 和 `sort_order`。用过的只能停用（`active=False`，编号不复用）；没用过的（没挂文件、没进传送单和基线、发 MDL 时还不存在）可以真删除，删除前的完整内容写进变更记录（第 17F 步，见 `services/usage.py`）。
@@ -83,7 +83,7 @@ erDiagram
 |---|---|---|
 | code | str, 唯一 | admin / member / readonly … |
 | name | str | 显示名 |
-| permissions | JSON 列表 | 权限码，如 `file.read`、`file.write`、`mdl.import` |
+| permissions | JSON 列表 | 权限码，使用系统定义的权限码 |
 | builtin | bool | 内置角色 |
 | active | bool | |
 
@@ -140,14 +140,14 @@ erDiagram
 | name, description | | |
 | archived_at | 时间, 可空 | 不为空表示已归档（只读） |
 | naming_templates | JSON | 命名模板（按设备 / 不对应设备 / 客户文件 …） |
-| numbering_rules | JSON | 编号规则，如 `{"milestone_code_prefix": "M"}`：里程碑代码前缀（默认 M，即 M1、M2…） |
+| numbering_rules | JSON | 编号规则；`milestone_code_prefix` 配置里程碑代码前缀 |
 | client_name, contractor_name | str, 可空 | 客户名称、总包名称，印在导出 MDL 的表头（2026-10-24 新增，迁移 `4b18ca22997d`） |
 | mdl_doc_no | str, 可空 | MDL 自身的文件编号；空着时导出用"项目编号-MDL" |
 | mdl_prepared_by, mdl_checked_by, mdl_approved_by | str, 可空 | MDL 签字栏的编制、校核、批准人 |
 | review_days | int, 可空 | 客户审核期限（天）：提交后超过这么多天没回复算客户超期未审；空着表示不限（2026-10-24 新增，迁移 `14f91edb577e`） |
 | active | bool | |
 
-`numbering_rules` 里还可以配 `transmittal_prefix`：传送单编号前缀，默认 `TR`（编号如 `P-001-TR-0001`）。
+`numbering_rules` 里还可以配 `transmittal_prefix`：传送单编号前缀，默认 `TR`。
 
 > 2026-10-24（迁移 `14f91edb577e`）删除了第一版不用的 `mdl_templates` 表和项目的 `default_mdl_template_id`。
 
@@ -157,11 +157,11 @@ erDiagram
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | project_id → projects | 可空 | 空 = 产品默认 |
-| code | str | 客户用的代码，如 `1`、`A` |
+| code | str | 客户定义的审核代码 |
 | label_en, label_zh | str | 名称 |
 | status | 枚举 | 对应的平台状态：已批准 / 需修改重交 / 客户审核中 / 不适用 |
 | final | bool | 是否最终批准；带意见批准为否，闭环时要求拿到最终批准 |
-| aliases | JSON 列表 | 识别用的别名（不区分大小写），如 `approved as noted` |
+| aliases | JSON 列表 | 识别用的别名（不区分大小写） |
 | sort_order, active | | |
 
 默认：`1` 批准（最终）· `2` 带意见批准（不是最终）· `3` 修改重交 · `4` 不批准（→ 需修改重交）· `5` 仅供参考（→ 已批准，最终）。
@@ -188,14 +188,14 @@ MDL 上的状态文字 → 平台状态 + 责任方。**project_id 为空的是�
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | project_id → projects | | （project_id, code）唯一 |
-| code | str | 如 `M3`，由平台自动生成（前缀按项目编号规则，默认 M） |
-| number | str | 进文件编号的部分，如 `3`，自动生成；插入、删除、调整顺序后自动补齐 |
+| code | str | 由平台自动生成（前缀按项目编号规则，默认 M） |
+| number | str | 进文件编号的部分，自动生成；插入、删除、调整顺序后自动补齐 |
 | name, description, goal, remarks | | 来自 MDL 说明表 |
 | due_date | 日期 | 里程碑截止日期 |
 | closed_at | 时间, 可空 | 记录关闭的系统时间；不为空表示已关闭（不锁定，可重新打开）（2026-10-24 新增，迁移 `14f91edb577e`） |
 | closed_date | 日期 | 真实关闭日期 |
 | closed_by_name | str | 操作人 |
-| close_basis | text | 关闭依据，如付款申请号、客户确认函；带未闭环项关闭时注明项数和原因 |
+| close_basis | text | 关闭依据；带未闭环项关闭时注明项数和原因 |
 | sort_order, active | | |
 
 ### modules 模块
@@ -206,7 +206,7 @@ MDL 上的状态文字 → 平台状态 + 责任方。**project_id 为空的是�
 |---|---|---|
 | project_id → projects | | （project_id, submittal_no）唯一 |
 | milestone_id → milestones | | |
-| submittal_no | str | 文本编号，`里程碑编号.序号`（如 `3.10`），由平台自动生成；`4.1` ≠ `4.10` |
+| submittal_no | str | 文本编号，`里程碑编号.序号`，由平台自动生成；完整字符串不按小数比较 |
 | name | str | |
 | category | str | 分类 |
 | per_equipment | bool | 按设备 |
@@ -218,12 +218,12 @@ MDL 上的状态文字 → 平台状态 + 责任方。**project_id 为空的是�
 | required_date | 日期 | 要求日期：合同签订日 / 客户提出日 / 内部决定日（真实日期，不知道就空着） |
 | basis | text | 要求依据：合同规定填合同条款；客户要求填客户提出要求的函件、邮件、会议纪要编号。闭环检查时，合同规定和客户要求没写依据的会提示 |
 | changed_date | 日期 | 要求内容变更的日期（真实日期） |
-| change_ref | text | 变更依据，如客户函件号、邮件 |
+| change_ref | text | 变更依据 |
 | in_client_mdl | bool | 是否列入给客户的 MDL：内部要求一律否；合同规定、客户要求默认是，可手动隐藏 |
 | acceptance | 枚举, 可空 | 客户要求是否接受（只对客户要求有效，新建时默认待确认）。不接受时应交项自动为不适用，客户 MDL 里显示"不接受：依据"（2026-10-24 新增，迁移 `14f91edb577e`） |
 | acceptance_ref | text | 接受 / 不接受的依据，不接受时必填 |
 | variation_ref | text | 变更单号（VO / CO），要额外收费或谈工期的新增文件用 |
-| keywords | JSON 列表 | 识别关键词：文件里常见的别的叫法（如 "DS"、"cut sheet"），智能投递识别用（第 12A 步新增，迁移 `40c587a2818f`） |
+| keywords | JSON 列表 | 识别关键词：文件里常见的别的叫法，智能投递识别用（第 12A 步新增，迁移 `40c587a2818f`） |
 | sort_order, active | |
 
 > 2026-10-24（迁移 `14f91edb577e`）删除了 `epc_reference`（合同依据，已合并进 `basis`）、`doc_count`、`knowledge_form`、`visibility`（都没有用到）。 |
@@ -253,7 +253,7 @@ MDL 上种类行下方"编号和名称为空、Module 有值"的行。（documen
 |---|---|---|
 | project_id → projects | | （project_id, tag）唯一（有编号的），**停用的也占用，编号不复用** |
 | equipment_type_id → equipment_types | 可空 | |
-| tag | str, 可空 | 设备编号，如 `72`；选填（2026-10-24 改，迁移 `413100fdb12b`）：没编号的用名称区分，没编号的名称不能重复（服务层保证，停用的也占用），文件名里不带编号 |
+| tag | str, 可空 | 设备编号；选填（2026-10-24 改，迁移 `413100fdb12b`）：没编号的用名称区分，没编号的名称不能重复（服务层保证，停用的也占用），文件名里不带编号 |
 | name | str | 设备名 |
 | vendor | str | 供应商 |
 | quantity | int | 台数（可以几千） |
@@ -290,8 +290,8 @@ MDL 上种类行下方"编号和名称为空、Module 有值"的行。（documen
 | responsible | 枚举 | 默认 none |
 | due_date | 日期 | 覆盖值；为空时取 种类 → 里程碑 |
 | submitted_date | 日期 | |
-| status_date | 日期 | 当前状态真实发生的日期（如客户批准那天），与操作时间分开；不知道就空着（2026-10-24 新增，迁移 `d4a19dac570a`） |
-| status_basis | text | 当前状态的依据，如客户函件号；从 MDL 状态文字自动得出时写"来自 MDL 状态文字：…" |
+| status_date | 日期 | 当前状态真实发生的日期，与操作时间分开；不知道就空着（2026-10-24 新增，迁移 `d4a19dac570a`） |
+| status_basis | text | 当前状态的依据；从 MDL 状态文字自动得出时写"来自 MDL 状态文字：…" |
 | remarks | text | |
 | obsolete | bool | 设备 / 模块 / 种类停用后标记，不删除 |
 | external_refs | JSON 列表 | **预留（第三版）**：`[{"system": "procore", "id": "…"}]` |
@@ -308,7 +308,7 @@ MDL 上种类行下方"编号和名称为空、Module 有值"的行。（documen
 **没有任何 file_deliverables 关联的文件 = 待归类。**
 
 ### file_deliverables 文件-应交项关联
-一个文件可挂多个应交项，如 `3.5.72&73_…` 同时满足设备 72 和 73；存储只有一份，升版只升一次。
+一个文件可关联多个应交项，共用同一实体和版本序列。
 （file_id, deliverable_id）唯一。
 
 ### versions 版本（只增不改）
@@ -338,7 +338,7 @@ MDL 上种类行下方"编号和名称为空、Module 有值"的行。（documen
 |---|---|---|
 | project_id → projects | | |
 | rev_no | int | 0、1、2…，显示为 Rev.0 |
-| description | text | 版本说明，如客户函件号 |
+| description | text | 版本说明 |
 | snapshot | JSON | 结构快照：里程碑、文件种类（含分区模块名）按内部 id 记录，编号变了也能认出是同一个；只存结构，不存状态 |
 | frozen_by → users, frozen_by_name | | 记录人（发 MDL 的人） |
 | frozen_at | 时间 | 记录时间 |
@@ -349,11 +349,11 @@ MDL 上种类行下方"编号和名称为空、Module 有值"的行。（documen
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | project_id → projects | | |
-| number, seq | str, int | 编号，如 `P-001-TR-0001`，按项目顺序自动生成 |
+| number, seq | str, int | 编号，按项目顺序自动生成 |
 | subject | str | 事由 |
 | submitted_date | 日期, 可空 | 提交日期（真实日期）；平台生成默认今天，补记必填，MDL 导回补记时可能不知道 |
 | source | 枚举 | 平台生成 / 事后补记 / MDL 导回补记 |
-| method | str | 怎么交的，如 email / client_system |
+| method | str | 怎么交的 |
 | external_ref | str | 客户系统单号 |
 | remarks, created_by_name | | |
 | void, void_reason | bool, text | 作废及原因 |
@@ -367,7 +367,7 @@ MDL 上种类行下方"编号和名称为空、Module 有值"的行。（documen
 | transmittal_id → transmittals | | |
 | deliverable_id → deliverables | | |
 | version_id → versions | 可空 | 交出去的版本里最新的一个（兼容旧数据）；全部版本见 transmittal_item_versions |
-| revision | str | 客户看到的版次，如 Rev B |
+| revision | str | 客户看到的版次 |
 | review_code, review_status, review_final | | 审核代码及当时对应的平台状态、是否最终（按当时的配置存一份，改配置不影响历史） |
 | reply_date | 日期 | 客户回复的真实日期 |
 | reply_ref | str | 回函号 / 客户传送单号 / 系统单号 |

@@ -18,7 +18,7 @@ English | [简体中文](README.zh-CN.md)
 
 ## About
 
-**Status: v1 pilot acceptance in progress.** Core workflows are implemented and basic Windows deployment has been verified locally. AI is not implemented; capacity, performance and failure-recovery targets are not fully accepted. Documentation (Chinese): [architecture and acceptance](docs/architecture.md) · [user guide](docs/user-guide.md).
+**Status: v1 deployment acceptance in progress.** Core workflows are implemented and basic Windows deployment has been verified locally. AI is not implemented; capacity, performance and failure-recovery targets are not fully accepted. Documentation (Chinese): [architecture and acceptance](docs/architecture.md) · [user guide](docs/user-guide.md).
 
 When a company delivers machines or a complete production line, every piece of equipment comes with a stack of documents the client expects:
 
@@ -26,7 +26,7 @@ When a company delivers machines or a complete production line, every piece of e
 - manuals and wiring diagrams;
 - certificates and test reports.
 
-On a project with hundreds of machines, this means thousands of files from the company itself and from its suppliers, each going through several revisions. In practice the list of what is owed lives in an Excel sheet, the files sit in shared folders with inconsistent names, and finding what is still missing is manual work before every client meeting.
+Project files come from internal teams and suppliers and undergo revisions throughout delivery. Maintaining the register separately from shared folders creates repeated manual work for naming, filing and tracking outstanding documents.
 
 docbase tracks this per project and per machine:
 
@@ -175,7 +175,7 @@ The repository includes pytest, Vitest and Playwright tests. Database tests use 
 
 ## Roadmap
 
-- **v1: Document base — pilot acceptance in progress.** Core workflows are implemented. Evidence is still needed for 80 GB imports, 90% classification accuracy, 20 concurrent users and fault recovery.
+- **v1: Document base — deployment acceptance in progress.** Core workflows are implemented. Evidence is still needed for bulk imports, classification accuracy, concurrent usage and fault recovery.
 - [ ] **v2: AI.** Knowledge-base Q&A over project documents, AI pre-review of submittals.
 - [ ] **v3: Workflow.** Internal approval flows, push to other project management platform like jira.
 
@@ -191,6 +191,8 @@ The repository includes pytest, Vitest and Playwright tests. Database tests use 
 | Data model and migration | [Database](docs/database.md) / [Machine migration](docs/migrate-machine.md) |
 
 The repository includes source, tests, migrations, CI, release/deployment tools and product documentation. Private samples, personal keyword lists, machine-specific audit records, AI work notes, credentials, environments, logs and databases stay local.
+
+Public documentation uses general business rules, field definitions and necessary operating parameters. It excludes concrete project identifiers, sample filenames, device models and project statistics.
 
 Git commit and push do not require Python. There is no mandatory commit hook; developers run `check.py` explicitly. CI prepares its own runner environment and does not depend on a local virtual environment or private keyword list.
 

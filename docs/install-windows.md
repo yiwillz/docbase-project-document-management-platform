@@ -25,14 +25,14 @@
 |---|---|
 | 系统 | Windows 10 / 11（专业版或以上），64 位 |
 | 内存 | ≥ 8 GB |
-| 文件存储 | 外接 ≥ 1 TB 的 USB 固态盘（或内置第二块盘 / NAS）；盘符固定（如 `E:`） |
+| 文件存储 | 外接 ≥ 1 TB 的 USB 固态盘（或内置第二块盘 / NAS）；盘符固定 |
 | 备份 | 另一块盘或 NAS 更好；至少不要和文件存储在同一块盘上 |
 | 网络 | 有线网（USB 网卡或扩展坞）、**固定 IP**；网络类型设成"专用网络" |
 | 电源 | 接电源；关闭睡眠和休眠；关闭 USB 选择性暂停（否则外接盘会被断开） |
 
 ## 3. 安装前准备
 
-**新电脑推荐使用完整 Windows 发布包**：将 zip 解除锁定并完整解压到短路径（例如 `C:\docbase-setup`），双击 **`install.cmd`**，接受管理员权限提示。不要在 zip 内运行，不要单独复制 `.ps1`。首次需要联网和可用的微软 App Installer / winget；不需要预装 Python、数据库、Git 或 Node。也可在解压目录执行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`。
+**新电脑推荐使用完整 Windows 发布包**：将 zip 解除锁定并完整解压到短路径，双击 **`install.cmd`**，接受管理员权限提示。不要在 zip 内运行，不要单独复制 `.ps1`。首次需要联网和可用的微软 App Installer / winget；不需要预装 Python、数据库、Git 或 Node。也可在解压目录执行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`。
 
 成功后打开 `https://localhost`，账号 `admin`，随机密码以管理员身份读取 `C:\docbase\config\setup-credentials.json`。默认数据目录为 `C:\docbase-data`，备份目录为 `C:\docbase-backup`。失败查看 `C:\docbase\logs\bootstrap.log`。双击 `.ps1` 通常只会打开编辑器，因此提供 `.cmd` 作为双击入口。
 
@@ -44,10 +44,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\install
 
 它会申请管理员权限，使用 winget 安装缺少的 Python 3.12、PostgreSQL 17，构建当前源码安装包，再安装服务并验证 HTTPS、登录和备份恢复。不需要 Git。新生成的随机密码保存在 `C:\docbase\config\setup-credentials.json`，部署日志为 `C:\docbase\logs\bootstrap.log`。在完整发布包中直接运行 `bootstrap.ps1`，无需安装 Node 或构建前端。
 
-在线默认只配置 `localhost`。需要其他内网电脑访问时，以实际固定 IP 替换示例，从完整发布包目录运行：
+在线默认只配置 `localhost`。需要其他内网电脑访问时，输入实际固定 IP 或域名，从完整发布包目录运行：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Address 192.168.1.50 -DataDir E:\docbase-data
+$ServerAddress = Read-Host '服务器固定 IP 或域名'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Address $ServerAddress
 ```
 
 若机器已有其他方式安装的 PostgreSQL，脚本不能猜出其密码，可在 PowerShell 加 `-PgPassword (Read-Host -AsSecureString)`。不要把密码明文写进命令。切换已有部署的目录须手动迁移数据并更新配置；重跑安装时已有 `docbase.env` 会被沿用，`-DataDir` 不会替你搬移文件。
@@ -56,10 +57,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Address 1
 
 1. **Python 3.12**（64 位）：从 python.org 下载 3.12 的 Windows 安装程序，安装时勾选 **Add python.exe to PATH**。要用 3.12，不能用 3.13 或更新（安装包里的依赖是为 3.12 准备的）。
 2. **PostgreSQL 17**（或 16）：从 postgresql.org 下载 Windows 安装程序，按默认选项安装，**记住设置的 postgres 密码**（安装 docbase 时要输入一次，用来建库和账号）。
-3. **外接盘**：接好并在"磁盘管理"里固定盘符；建一个文件夹，如 `E:\docbase-data`。
+3. **外接盘**：接好并在"磁盘管理"里固定盘符；在目标盘上建立数据目录。
 4. **电源**：设置 → 电源 → 睡眠设成"从不"；控制面板 → 电源选项 → 更改计划设置 → 更改高级电源设置 → USB 设置 → USB 选择性暂停设置 → 已禁用。
 5. **固定 IP**：在路由器 / DHCP 上给这台电脑分配固定 IP，或在网卡设置里手动设置。
-6. 把 docbase 安装包（`docbase-版本-windows.zip`）复制到这台电脑，**右键 → 属性 → 勾选"解除锁定"**，再解压（比如解压到桌面）。
+6. 把 docbase 安装包（`docbase-版本-windows.zip`）复制到这台电脑，**右键 → 属性 → 勾选"解除锁定"**，再解压。
 
 下面的离线应用安装不需要上网：前提是已准备好 Python、PostgreSQL 和完整发布包；Python 应用依赖、WinSW、Caddy 在包里。
 
@@ -84,7 +85,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 | `-DataDir` | 文件存储目录 | `C:\docbase-data` |
 | `-BackupDir` | 备份目录 | `C:\docbase-backup` |
 | `-InstallDir` | 安装目录（程序、配置、日志） | `C:\docbase` |
-| `-Address` | 访问地址，IP 或名字，多个用逗号分隔，如 `192.168.1.50,docbase.corp.local` | 本机局域网 IP |
+| `-Address` | 访问地址，IP 或名字，多个用逗号分隔 | 本机局域网 IP |
 
 脚本依次做：检查 Python 和 PostgreSQL → 复制程序 → 离线安装依赖 → 建数据库和账号（要输入 postgres 密码）→ 写配置文件 → 升级数据库结构 → **建第一个系统管理员**（输入用户名和两次密码）→ 生成 HTTPS 配置 → 注册三个服务 → 开防火墙 → 检查。
 
@@ -123,7 +124,7 @@ Caddy 第一次启动时生成内部 CA 根证书，用它给配置的访问地�
 
 ### 5.2 用公司自己的证书
 
-公司有自己的证书颁发机构（如 AD 证书服务）时，可以用它签发的证书，各电脑天然信任：
+公司有自己的证书颁发机构时，可以用它签发的证书，各电脑天然信任：
 
 1. 申请证书时把访问地址（IP 或名字）写进"使用者可选名称（SAN）"；导出成 PEM 格式的证书（含中间证书）`docbase.crt` 和私钥 `docbase.key`，放到 `C:\docbase\certs\`。
 2. 编辑 `C:\docbase\proxy\Caddyfile`，把 `tls internal` 改成：
@@ -134,7 +135,7 @@ Caddy 第一次启动时生成内部 CA 根证书，用它给配置的访问地�
 
 ### 5.3 用 Nginx 代替 Caddy
 
-客户 IT 习惯 Nginx 时，可以停用 `docbase-proxy` 服务，用发布包 `nginx\docbase.conf`（源码 `deploy\nginx\docbase.conf`）示例配置。该示例的证书和日志默认使用 Linux 路径，Windows 上须先改成实际路径，再用 `nginx -t` 验证。默认安装仍使用 Caddy。
+客户 IT 习惯 Nginx 时，可以停用 `docbase-proxy` 服务，用发布包 `nginx\docbase.conf`（源码 `deploy\nginx\docbase.conf`）配置文件。该配置的证书和日志默认使用 Linux 路径，Windows 上须先改成实际路径，再用 `nginx -t` 验证。默认安装仍使用 Caddy。
 
 ## 6. 日常运维
 
@@ -216,7 +217,9 @@ $env:DOCBASE_ENV_FILE = 'C:\docbase\config\docbase.env'
 2. 找备份点：`restore.py --list`
 3. 覆盖恢复（会要求输入库名确认）：
    ```powershell
-   ..\..\venv\Scripts\python.exe scripts\restore.py --stamp 20261026 --to docbase --data-dir E:\docbase-data --force
+   $BackupStamp = Read-Host '备份点标识'
+   $BackupStamp = Read-Host '备份点标识'
+   ..\..\venv\Scripts\python.exe scripts\restore.py --stamp $BackupStamp --to docbase --data-dir E:\docbase-data --force
    ```
 4. 启动服务：`Start-Service docbase-api, docbase-worker, docbase-proxy`
 

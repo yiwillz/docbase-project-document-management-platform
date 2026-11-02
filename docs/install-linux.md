@@ -13,7 +13,7 @@ Linux 上有两种装法，用同一套程序，数据和备份格式也一样�
 
 安装包：`docbase-版本-linux.tar.gz`（离线：Python 依赖在包里；带 `docbase-image.tar` 的是 docker 离线版）。
 
-Surface Pro 7 的当前试点优先按 `install-windows.md` 使用 Windows 原生服务，见 PRD 第 5、8–9 节。本手册面向已有 Linux 服务器的场景。部署入口区别见 `../deploy/README.zh-CN.md`（源码仓库内）。
+Windows 原生部署见 `install-windows.md`。本手册面向 Linux 服务器。部署入口区别见 `../deploy/README.zh-CN.md`（源码仓库内）。
 
 完全离线的镜像 tar 必须同时包含 `docbase:版本`、`postgres:17`、`caddy:2.10.2`；Docker Engine 和 Compose 需要事先安装。旧发布包不会随源码修复自动更新，应重新构建。
 
@@ -44,7 +44,7 @@ sudo ./docker-install.sh --data-dir /srv/docbase/data
 
 脚本依次做：检查 docker → 载入镜像（包里有 `docbase-image.tar` 时离线载入）→ 生成 `.env`（数据库密码随机、只有 root 能读）→ 建目录并给容器用户（uid 10001）写权限 → 启动四个容器 → **建第一个系统管理员**（输入用户名和两次密码）→ 导出根证书 `docbase-root.crt`。
 
-**安装目录就是解压出来的这个目录**（里面有 `.env` 和 `docker-compose.yml`），以后的命令都在这里执行；建议解压到固定位置，如 `/opt/docbase-docker`。
+**安装目录就是解压出来的这个目录**（里面有 `.env` 和 `docker-compose.yml`），以后的命令都在这里执行；建议解压到固定位置，后续命令中的路径应与实际安装位置一致。
 
 四个容器都设成 `restart: unless-stopped`：服务器重启后自动启动，崩溃后自动重启。数据库数据在 docker 卷 `docbase_pgdata` 里。
 
@@ -163,7 +163,7 @@ sudo ./uninstall.sh                               # 只删服务；--remove-prog
 用公司 CA 签发的证书：
 - docker：把证书和私钥放到安装目录 `certs/`，在 `docker-compose.override.yml` 里给 proxy 挂上 `./certs:/certs:ro`，把 `Caddyfile.docker` 里的 `tls internal` 改成 `tls /certs/docbase.crt /certs/docbase.key`。执行 `sudo docker compose up -d --no-build --pull never` 应用挂载，再执行 `sudo docker compose exec proxy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile` 加载证书配置。
 - systemd：改 `/etc/caddy/Caddyfile` 的 `tls internal` 为证书路径（caddy 用户要能读），`sudo systemctl reload caddy`。
-- 或者用 Nginx：配置示例在安装包的 `nginx/docbase.conf`（安装时加 `--proxy nginx`）。
+- 或者用 Nginx：配置文件在安装包的 `nginx/docbase.conf`（安装时加 `--proxy nginx`）。
 
 ## 6. 文件存储断开
 
